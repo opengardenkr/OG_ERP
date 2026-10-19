@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import {
   eventColorHex,
   OBSERVANCE_GRAY,
@@ -18,25 +20,10 @@ const API = "https://www.googleapis.com/calendar/v3/calendars";
 
 export class CalendarError extends Error {}
 
-/** 캘린더 자체의 색. 일정에 따로 정한 색이 없을 때 쓴다. */
-type Palette = {
-  /** calendarId -> hex */
-  calendar: Record<string, string>;
-};
 
 /** 대한민국 공휴일 캘린더인가. 이 캘린더는 색을 고정으로 칠한다. */
 export function isHolidayCalendar(calendarId: string): boolean {
   return calendarId.includes("#holiday@group.v.calendar.google.com");
-}
-
-async function fetchJson<T>(url: string, accessToken: string): Promise<T | null> {
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    // 색을 바꾸면 곧 반영돼야 한다. 색표는 가벼우니 짧게 잡는다.
-    next: { revalidate: 60 },
-  });
-  if (!response.ok) return null;
-  return (await response.json()) as T;
 }
 
 type CalendarListItem = {
@@ -47,25 +34,34 @@ type CalendarListItem = {
   accessRole?: string;
 };
 
-/** 내 구글 캘린더 목록. 실패하면 빈 목록 — 색·이름이 빠질 뿐 화면은 산다. */
-async function getCalendarList(accessToken: string): Promise<CalendarListItem[]> {
-  const list = await fetchJson<{ items?: CalendarListItem[] }>(
-    "https://www.googleapis.com/calendar/v3/users/me/calendarList",
-    accessToken,
-  );
-  return list?.items ?? [];
+/**
+ * 내 구글 캘린더 목록(이름·색·권한). 실패하면 빈 목록 — 색이 회색이 되고
+ * 고치기가 막힐 뿐 일정은 보인다.
+ *
+ * 한 요청 안에서는 한 번만 부른다(`cache`). 요청을 넘겨 캐시하지 않는다 —
+ * fetch 캐시에 걸면 실패 응답까지 남아, 권한을 고친 뒤에도 한동안 막혀 보인다.
+ */
+const getCalendarList = cache(
+  async (accessToken: string): Promise<CalendarListItem[]> => {
+    const response = await fetch(
+      "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
+    );
+    if (!response.ok) return [];
+    const body = (await response.json()) as { items?: CalendarListItem[] };
+    return body.items ?? [];
+  },
+);
+
+type CalendarInfo = Map<string, CalendarListItem>;
+
+async function getCalendarInfo(accessToken: string): Promise<CalendarInfo> {
+  const list = await getCalendarList(accessToken);
+  return new Map(list.map((item) => [item.id.toLowerCase(), item]));
 }
 
-/**
- * 캘린더 색을 읽는다. 실패해도 일정은 보여야 하므로 빈 표를 돌려준다 —
- * 색이 없으면 회색으로 그릴 뿐 화면이 죽지는 않는다.
- */
-async function getPalette(accessToken: string): Promise<Palette> {
-  const calendar: Record<string, string> = {};
-  for (const item of await getCalendarList(accessToken)) {
-    if (item.backgroundColor) calendar[item.id] = item.backgroundColor;
-  }
-  return { calendar };
+function canWrite(item: CalendarListItem | undefined): boolean {
+  return item?.accessRole === "owner" || item?.accessRole === "writer";
 }
 
 type GoogleEvent = {
@@ -76,22 +72,42 @@ type GoogleEvent = {
   location?: string;
   description?: string;
   htmlLink?: string;
-  organizer?: { email?: string; displayName?: string };
+  recurringEventId?: string;
+  eventType?: string;
+  locked?: boolean;
+  privateCopy?: boolean;
+  guestsCanModify?: boolean;
+  /** self: 이 캘린더가 주최자인가. 남이 보낸 초대면 빠져 있다(false) */
+  organizer?: { email?: string; displayName?: string; self?: boolean };
   creator?: { email?: string; displayName?: string };
   start?: { date?: string; dateTime?: string };
   end?: { date?: string; dateTime?: string };
 };
 
+/**
+ * 포털에서 고쳐도 되는 일정인가.
+ * 남이 보낸 초대를 고치면 내 사본만 바뀌어 상대와 어긋난다. 생일·Gmail 일정 같은
+ * 특수 일정은 구글이 고치기를 막는다. 그런 것은 내용만 보여주고 구글로 보낸다.
+ */
+function isEditable(event: GoogleEvent, calendar: CalendarListItem | undefined): boolean {
+  if (!canWrite(calendar)) return false;
+  if (event.locked || event.privateCopy) return false;
+  if (event.eventType && event.eventType !== "default") return false;
+  const organizedHere = !event.organizer || event.organizer.self === true;
+  return organizedHere || event.guestsCanModify === true;
+}
+
 function toPortalEvent(
   event: GoogleEvent,
   calendarId: string,
-  palette: Palette,
+  info: CalendarInfo,
 ): PortalEvent | null {
   const start = event.start?.dateTime ?? event.start?.date;
   if (!start) return null; // 시작이 없는 일정은 그릴 수 없다
 
   // 공휴일 캘린더는 설명 첫 줄에 "공휴일"(쉬는 날) / "기념일"(안 쉬는 날)을 적어 보낸다.
   const holiday = isHolidayCalendar(calendarId);
+  const calendar = info.get(calendarId.toLowerCase());
   const offDay = holiday && (event.description ?? "").startsWith("공휴일");
 
   return {
@@ -111,7 +127,14 @@ function toPortalEvent(
       ? offDay
         ? OFF_DAY_RED
         : OBSERVANCE_GRAY
-      : (eventColorHex(event.colorId) ?? palette.calendar[calendarId]),
+      : (eventColorHex(event.colorId) ?? calendar?.backgroundColor),
+    google: {
+      calendarId,
+      eventId: event.id,
+      colorId: event.colorId,
+      editable: !holiday && isEditable(event, calendar),
+      recurring: Boolean(event.recurringEventId),
+    },
   };
 }
 
@@ -120,7 +143,7 @@ async function fetchOne(
   accessToken: string,
   from: Date,
   to: Date,
-  palette: Palette,
+  info: CalendarInfo,
 ): Promise<PortalEvent[]> {
   const url = new URL(`${API}/${encodeURIComponent(calendarId)}/events`);
   url.searchParams.set("timeMin", from.toISOString());
@@ -156,7 +179,7 @@ async function fetchOne(
 
   return (body.items ?? [])
     .filter((event) => event.status !== "cancelled")
-    .map((event) => toPortalEvent(event, calendarId, palette))
+    .map((event) => toPortalEvent(event, calendarId, info))
     .filter((event): event is PortalEvent => event !== null);
 }
 
@@ -166,9 +189,9 @@ export async function getGoogleEvents(
   from: Date,
   to: Date,
 ): Promise<PortalEvent[]> {
-  const palette = await getPalette(accessToken);
+  const info = await getCalendarInfo(accessToken);
   const pages = await Promise.all(
-    calendarIds.map((id) => fetchOne(id, accessToken, from, to, palette)),
+    calendarIds.map((id) => fetchOne(id, accessToken, from, to, info)),
   );
   return pages.flat();
 }
@@ -182,16 +205,13 @@ export async function getWritableGoogleCalendars(
   ids: string[],
   accessToken: string,
 ): Promise<WritableCalendar[]> {
-  const list = await getCalendarList(accessToken);
-  const byId = new Map(list.map((item) => [item.id.toLowerCase(), item]));
+  const info = await getCalendarInfo(accessToken);
 
   return ids
     .filter((id) => !isHolidayCalendar(id))
     .flatMap((id) => {
-      const item = byId.get(id.toLowerCase());
-      if (!item || (item.accessRole !== "owner" && item.accessRole !== "writer")) {
-        return [];
-      }
+      const item = info.get(id.toLowerCase());
+      if (!item || !canWrite(item)) return [];
       return [
         {
           id,

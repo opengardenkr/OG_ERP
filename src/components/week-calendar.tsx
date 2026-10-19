@@ -39,7 +39,7 @@ function place(events: PortalEvent[], fromMin: number): Placed[] {
   const spans = events
     .map((event) => {
       const start = minutesOfDay(event.start);
-      const end = event.end ? minutesOfDay(event.end) : start + 60;
+      const end = endMinutes(event);
       return { event, start, end: Math.max(end, start + 30) };
     })
     .sort((a, b) => a.start - b.start);
@@ -90,9 +90,15 @@ export function WeekCalendar({
 }) {
   if (!result.ok) return <ErrorState message={result.message} />;
 
-  const timed = result.data.filter((event) => !event.allDay);
+  // 여러 날에 걸친 시간 일정(출장 3일 등)은 칸에 넣으면 첫날 30분짜리로 찌그러진다.
+  // 구글처럼 종일 띠에 막대로 놓는다.
+  const spansDays = (event: PortalEvent) => {
+    const { start, end } = eventRange(event);
+    return start !== end;
+  };
+  const timed = result.data.filter((event) => !event.allDay && !spansDays(event));
   const off = offDays(result.data);
-  const allDay = result.data.filter((event) => event.allDay);
+  const allDay = result.data.filter((event) => event.allDay || spansDays(event));
 
   // 종일 일정을 여러 날 막대로 놓는다. 겹치면 아래 줄로.
   const first = days[0];
@@ -114,9 +120,7 @@ export function WeekCalendar({
 
   // 일정이 눈금 밖에 있으면 눈금을 넓힌다. 안 보이는 일정이 있으면 안 된다.
   const starts = timed.map((event) => Math.floor(minutesOfDay(event.start) / 60));
-  const ends = timed.map((event) =>
-    Math.ceil(minutesOfDay(event.end ?? event.start) / 60),
-  );
+  const ends = timed.map((event) => Math.ceil(endMinutes(event) / 60));
   // 정규 시간이 기본 눈금이고, 그 밖에 일정이 있으면 넓힌다.
   const fromHour = Math.max(0, Math.min(WORK_START_HOUR - PAD_HOURS, ...starts));
   const toHour = Math.min(24, Math.max(WORK_END_HOUR + PAD_HOURS, ...ends));
@@ -170,7 +174,7 @@ export function WeekCalendar({
               <div
                 key={bar.event.id}
                 title={bar.event.title}
-                className="absolute truncate px-1 text-[11px] leading-4"
+                className="absolute overflow-hidden text-[11px] leading-4"
                 style={{
                   top: bar.lane * 18,
                   left: `calc(${(bar.from / 7) * 100}% + 3px)`,
@@ -179,7 +183,10 @@ export function WeekCalendar({
                   ...tint(bar.event.color),
                 }}
               >
-                <EventLink event={bar.event} className="hover:underline" />
+                <EventLink
+                  event={bar.event}
+                  className="block w-full truncate px-1 hover:underline"
+                />
               </div>
             ))}
           </div>
@@ -235,7 +242,7 @@ export function WeekCalendar({
                 <div
                   key={event.id}
                   title={event.title}
-                  className="absolute overflow-hidden rounded-[2px] px-1 py-px text-[11px] leading-tight"
+                  className="absolute overflow-hidden rounded-[2px] text-[11px] leading-tight"
                   style={{
                     top: event.top,
                     height: event.height,
@@ -244,7 +251,10 @@ export function WeekCalendar({
                     ...tint(event.color),
                   }}
                 >
-                  <EventLink event={event} className="hover:underline" />
+                  <EventLink
+                    event={event}
+                    className="block h-full w-full px-1 py-px align-top hover:underline"
+                  />
                 </div>
               ))}
             </div>
@@ -253,6 +263,13 @@ export function WeekCalendar({
       </div>
     </div>
   );
+}
+
+/** 끝 시각(분). 자정에 끝나는 일정(23:00~24:00)은 0분이 아니라 24시로 본다. */
+function endMinutes(event: PortalEvent): number {
+  if (!event.end) return minutesOfDay(event.start) + 60;
+  if (eventDate(event.end) !== eventDate(event.start)) return 24 * 60;
+  return minutesOfDay(event.end);
 }
 
 function tint(color: string | undefined): React.CSSProperties {

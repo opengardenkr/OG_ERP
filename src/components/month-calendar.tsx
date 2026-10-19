@@ -199,7 +199,7 @@ export function MonthCalendar({
                       <div
                         key={bar.event.id}
                         title={bar.event.title}
-                        className="absolute truncate px-1 text-[11px] leading-4"
+                        className="absolute overflow-hidden text-[11px] leading-4"
                         style={{
                           top: bar.lane * LANE_H,
                           left: `calc(${(bar.from / 7) * 100}% + 3px)`,
@@ -209,10 +209,11 @@ export function MonthCalendar({
                           ...(bar.continuesLeft ? { borderLeft: "none" } : null),
                         }}
                       >
-                        {bar.event.allDay ? null : (
-                          <span className="opacity-70">{eventTime(bar.event)} </span>
-                        )}
-                        <EventLink event={bar.event} className="hover:underline" />
+                        <EventLink
+                          event={bar.event}
+                          className="block w-full truncate px-1 hover:underline"
+                          time={bar.event.allDay ? undefined : eventTime(bar.event)}
+                        />
                       </div>
                     ))}
 

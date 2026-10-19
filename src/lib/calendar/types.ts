@@ -33,6 +33,26 @@ export type PortalEvent = {
    * 공휴일은 빨강, 박람회는 노랑처럼 규칙을 바꾸려고 코드를 고칠 이유가 없다.
    */
   color?: string;
+  /** 구글 일정이면 채운다. 포털 안에서 열고 고칠 때 쓴다. */
+  google?: GoogleRef;
+};
+
+/**
+ * 구글 일정의 주소와 고칠 수 있는지 여부.
+ * 서버 액션은 이 값을 그대로 믿지 않고 캘린더 권한을 다시 확인한다.
+ */
+export type GoogleRef = {
+  calendarId: string;
+  eventId: string;
+  /** 구글 일정 색 번호. 없으면 캘린더 색 */
+  colorId?: string;
+  /**
+   * 포털에서 고칠 수 있는가. 공휴일, 남이 보낸 초대, 쓰기 권한 없는 캘린더는
+   * 아니다 — 그런 일정은 내용만 보여주고 "구글에서 열기"를 남긴다.
+   */
+  editable: boolean;
+  /** 반복 일정의 한 번. 포털에서 고치면 이 날짜 하나만 바뀐다 */
+  recurring: boolean;
 };
 
 /** 한국 기준 날짜(YYYY-MM-DD). 달력 칸에 넣을 때 쓴다. */
@@ -63,7 +83,10 @@ export function eventRange(event: PortalEvent): { start: string; end: string } {
   const start = eventDate(event.start);
   if (!event.end) return { start, end: start };
 
-  let end = eventDate(event.end);
+  // 시간 일정이 자정에 끝나면(23:00~24:00) 다음 날로 넘어간 게 아니다. 1ms 앞으로 잰다.
+  let end = event.allDay
+    ? eventDate(event.end)
+    : eventDate(new Date(Date.parse(event.end) - 1).toISOString());
   if (event.allDay && event.source === "google") {
     const previous = new Date(`${end}T00:00:00Z`);
     previous.setUTCDate(previous.getUTCDate() - 1);
