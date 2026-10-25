@@ -1,4 +1,6 @@
 import { Nav } from "@/components/nav";
+import { UpdateNotice } from "@/components/update-notice";
+import { getAppRelease } from "@/lib/app-release";
 import { auth, signOut } from "@/lib/auth";
 
 /**
@@ -38,6 +40,7 @@ export async function AppShell({
           <div>
             <p className="text-xs font-semibold">{session?.user.member}</p>
             <form
+              data-og-ignore-draft
               action={async () => {
                 "use server";
                 await signOut({ redirectTo: "/login" });
@@ -49,6 +52,7 @@ export async function AppShell({
             </form>
           </div>
         </div>
+        <UpdateNotice current={getAppRelease()} />
       </aside>
 
       <main className="min-w-0 flex-1">

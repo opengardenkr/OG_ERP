@@ -2226,6 +2226,31 @@ loadFontSizes();
 renderSnapshots();   // 기한 지난 스냅샷 정리 + 목록·사용량 표시
 $('csvText').value = SAMPLE_TSV; // 첫 실행 시 샘플로 디자인·병합 로직 바로 확인
 applyCsv();
+
+// ═══ 외부 카탈로그 → 제안서 (가격 미포함) ═══
+// og_selection은 공개 식물명/학명/규격/사진만 포함하며 개인·가격 정보가 없습니다.
+(function importCatalogSelection(){
+  const encoded=new URLSearchParams(location.search).get('og_selection');
+  if(!encoded)return;
+  try{
+    if(encoded.length>7000)throw new Error('선택 품목이 너무 많습니다');
+    const raw=atob(encoded.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-encoded.length%4)%4));
+    const data=JSON.parse(new TextDecoder().decode(Uint8Array.from(raw,c=>c.charCodeAt(0))));
+    if(data.version!==1||!Array.isArray(data.items)||data.items.length<1||data.items.length>20)
+      throw new Error('유효하지 않은 품목 목록');
+    const cell=v=>'"'+String(v||'').replace(/"/g,'""').replace(/[\r\n]/g,' ')+'"';
+    const rows=[['국명','학명','Size (규격)','이미지_URL','카테고리','단가_WON'],
+      ...data.items.map(p=>[p.kname,p.sname,p.size,
+        /^https:\/\/open-garden\.co\.kr\/api\/plant-image\?/.test(p.image||'')?p.image:'',
+        '', ''])];
+    $('itemName').value='국내 식물';
+    $('csvText').value=rows.map(row=>row.map(cell).join(',')).join('\n');
+    switchTab(true);applyCsv();
+    setStatus(`카탈로그에서 ${data.items.length}개 품목을 가져왔습니다. 가격은 불러오지 않았으므로 확인 후 발행하세요.`);
+    // 사본을 생성한 후 URL의 선택 정보를 제거하여 불필요한 링크 확산을 방지합니다.
+    history.replaceState(null,'',location.pathname);
+  }catch(e){setStatus('카탈로그 목록을 가져오지 못했습니다: '+e.message,true);}
+})();
 </script>
 </body>
 </html>

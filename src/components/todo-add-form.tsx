@@ -52,7 +52,7 @@ export function TodoAddForm({
 
   if (stacked) {
     return (
-      <form ref={form} action={action}>
+      <form data-og-saving={pending ? "true" : undefined} ref={form} action={action}>
         {/* 본문 — 한 열로 쌓는다. 칸마다 제목이 왼쪽 위에 붙는다. */}
         <div className="flex flex-col gap-4 px-5 py-5">
           <Field label="내용" required>
@@ -122,7 +122,7 @@ export function TodoAddForm({
   }
 
   return (
-    <form ref={form} action={action} className="card p-3">
+    <form data-og-saving={pending ? "true" : undefined} ref={form} action={action} className="card p-3">
       <div className="flex flex-wrap gap-2">
         <input
           name="title"

@@ -22,7 +22,7 @@ export function TodoComments({ id, raw }: { id: string; raw: string }) {
     <section className="mt-10">
       <h2 className="section-title mb-3">댓글</h2>
 
-      <form ref={form} action={action} className="mb-4">
+      <form data-og-saving={pending ? "true" : undefined} ref={form} action={action} className="mb-4">
         <textarea
           name="body"
           rows={3}

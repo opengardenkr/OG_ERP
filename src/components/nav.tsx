@@ -8,13 +8,15 @@ const ITEMS = [
   { href: "/calendar", label: "일정" },
   { href: "/todos", label: "할 일" },
   { href: "/programs", label: "프로그램" },
+  { href: "/sales-map", label: "영업 지도" },
+  { href: "/updates", label: "업데이트" },
 ] as const;
 
 export function Nav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex gap-1 sm:flex-col">
+    <nav className="flex flex-wrap gap-1 sm:flex-col">
       {ITEMS.map((item) => {
         // '오늘'은 정확히 일치할 때만. 나머지는 하위 경로도 선택으로 본다.
         const active =
