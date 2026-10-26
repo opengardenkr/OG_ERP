@@ -13,8 +13,9 @@
   - `http://localhost:3000/api/auth/callback/google`
   - `https://app.open-garden.co.kr/api/auth/callback/google`
 
-> Vercel 미리보기 배포(`*.vercel.app`)에서는 로그인이 안 된다.
-> 리디렉션 URI가 등록되지 않아서다. 정식 도메인에서만 테스트한다.
+> Preview는 별도 테스트 OAuth 클라이언트와 고정 브랜치 callback URI를 등록해야 로그인할 수 있다.
+> Production 설정을 건드리지 않는 1회 설정과 진단 순서는 [Preview Google 로그인](preview-google-login.md)을 따른다.
+> 기존 Production+Preview 변수의 범위를 해제하지 말고, 새 이름의 Preview 전용 변수 두 개만 추가한다.
 
 ## 2. 로컬 실행
 
