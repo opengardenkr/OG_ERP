@@ -8,7 +8,7 @@ export default auth((req) => {
   if (req.auth) return;
 
   const url = new URL("/login", req.nextUrl.origin);
-  url.searchParams.set("from", req.nextUrl.pathname);
+  url.searchParams.set("from", req.nextUrl.pathname + req.nextUrl.search);
   return Response.redirect(url);
 });
 

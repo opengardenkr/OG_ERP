@@ -29,7 +29,10 @@ export function UpdateNotice({ current }: { current: AppRelease }) {
         return;
       }
       const result: AppRelease = await response.json();
-      if (typeof result.id !== "string" || typeof result.label !== "string") return;
+      if (!result || typeof result.id !== "string" || typeof result.label !== "string") {
+        if (manual) setStatus("error");
+        return;
+      }
       setLatest(result.id !== current.id ? result : null);
       if (manual) setStatus("ready");
     } catch {
@@ -67,7 +70,13 @@ export function UpdateNotice({ current }: { current: AppRelease }) {
     };
     const onReset = (event: Event) => {
       const target = event.target;
-      if (target instanceof HTMLFormElement) delete target.dataset.ogDirty;
+      // React may reset a form after its action resolves. Respect forms that
+      // cancel that reset to preserve failed saves or edits made while saving.
+      queueMicrotask(() => {
+        if (!event.defaultPrevented && target instanceof HTMLFormElement) {
+          delete target.dataset.ogDirty;
+        }
+      });
     };
     document.addEventListener("input", onEdit, true);
     document.addEventListener("change", onEdit, true);

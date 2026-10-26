@@ -17,17 +17,21 @@ export function TodoDetailForm({
   members: string[];
 }) {
   const form = useRef<HTMLFormElement>(null);
+  const editVersion = useRef(0);
   const [state, action, pending] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
+      const submittedVersion = editVersion.current;
       const next = await saveTodoAction(todo.id, prev, formData);
-      if (!next.error && form.current) delete form.current.dataset.ogDirty;
+      if (!next.error && form.current && editVersion.current === submittedVersion) {
+        delete form.current.dataset.ogDirty;
+      }
       return next;
     },
     { error: null },
   );
 
   return (
-    <form ref={form} data-og-saving={pending ? "true" : undefined} action={action} className="grid gap-6 md:grid-cols-[1fr_260px]">
+    <form ref={form} onChange={() => { editVersion.current += 1; }} onReset={(event) => event.preventDefault()} data-og-saving={pending ? "true" : undefined} action={action} className="grid gap-6 md:grid-cols-[1fr_260px]">
       {/* 왼쪽: 내용 */}
       <div className="space-y-4">
         <div>
