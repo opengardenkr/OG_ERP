@@ -1,9 +1,11 @@
 import { signIn } from "@/lib/auth";
+import { loginReturnPath } from "@/lib/auth/return-path";
 
 export default async function LoginPage({
   searchParams,
 }: PageProps<"/login">) {
-  const { error } = await searchParams;
+  const { error, from } = await searchParams;
+  const redirectTo = loginReturnPath(from);
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
@@ -23,7 +25,7 @@ export default async function LoginPage({
         className="mt-8"
         action={async () => {
           "use server";
-          await signIn("google", { redirectTo: "/" });
+          await signIn("google", { redirectTo });
         }}
       >
         <button
