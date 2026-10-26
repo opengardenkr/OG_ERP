@@ -17,27 +17,30 @@ const updates = [
 ];
 
 export default function UpdatesPage() {
+  const isPreview = process.env.VERCEL_ENV === "preview";
   return (
-    <AppShell title="업데이트 소식" subtitle="2026년 10월 25일 · 오픈가든 시스템 소식">
+    <AppShell title="업데이트 소식" subtitle="2026년 10월 27일 · 오픈가든 시스템 소식">
       <div className="rounded-lg border border-line bg-white p-4">
         <p className="font-semibold text-ink">무엇이 달라지나요?</p>
         <p className="mt-1 text-sm text-muted">식물을 찾고, 거래처를 방문하고, 제안서를 만드는 일이 더 쉬워져요.</p>
-        <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">이 안내는 이번 ERP 배포 예정 내용을 포함합니다. 실제 이용 여부는 배포 상태와 지도 API 설정에 따라 달라집니다.</p>
+        <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">{isPreview ? "현재 테스트 환경입니다. 제안서 연결·영업 지도·새 버전 알림 코드는 이 Preview에 반영되어 있습니다. 실제 업무 데이터와 연결될 수 있으므로 확인할 때는 저장·발행하지 마세요." : "ERP 기능과 별도 웹사이트 작업의 진행 상황을 안내합니다. 아래 항목은 설치 버튼이 아니며, 실제 이용 여부는 연결 설정과 검증 결과에 따라 달라집니다."}</p>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {updates.map(item => (
           <article key={item.title} className="rounded-lg border border-line bg-white p-4">
             <h2 className="font-semibold text-ink">{item.title}</h2>
             <p className="mt-2 text-sm text-muted">{item.desc}</p>
-            <p className={`mt-3 text-xs font-semibold ${item.ok ? "text-green-700" : "text-amber-700"}`}>{item.stage}</p>
+            <p className={`mt-3 text-xs font-semibold ${item.ok ? "text-green-700" : "text-amber-700"}`}>{isPreview && ["제안서·견적서 연동", "영업 지도", "새 버전 알림"].includes(item.title) ? `Preview 반영 · ${item.title === "영업 지도" ? "지도 인증·핀 표시 확인 필요" : item.title === "새 버전 알림" ? "새 배포 감지·입력 보호 확인 필요" : "선택 품목 가져오기 확인 필요"}` : item.stage}</p>
           </article>
         ))}
       </div>
       <div className="mt-5 flex flex-wrap gap-3 text-sm">
         <Link className="btn" href="/sales-map">영업 지도 보기 →</Link>
         <Link className="btn" href="/programs">프로그램 보기 →</Link>
+        <a className="btn" href="/tools/proposal.html" target="_blank" rel="noopener noreferrer">제안서 열기 ↗</a>
+        <a className="btn" href="/tools/catalog-bridge.html" target="_blank" rel="noopener noreferrer">카탈로그 선택 품목 ↗</a>
       </div>
-      <p className="mt-4 text-xs text-muted">공개 카탈로그는 별도 웹사이트 저장소에서 배포해야 합니다. 지도 핀과 새 버전 알림은 ERP 배포 후 실제 환경에서 검증합니다.</p>
+      <p className="mt-4 text-xs text-muted">사진 카탈로그·워터마크·검색 노출 개선은 별도 웹사이트 작업입니다. ERP의 업데이트 확인 버튼은 새로 배포된 버전을 확인하며, 별도 웹사이트 기능을 설치하지 않습니다. 카탈로그 선택 품목 화면은 카탈로그에서 전달한 품목이 있을 때 목록을 표시합니다.</p>
     </AppShell>
   );
 }
