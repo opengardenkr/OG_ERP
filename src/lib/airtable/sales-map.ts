@@ -1,4 +1,5 @@
 import "server-only";
+import { looksLikeAddress } from "@/lib/sales-map-address";
 
 import { selectRecords } from "@/lib/airtable/client";
 
@@ -56,9 +57,6 @@ function cleaned(value: unknown): string {
 }
 
 // 주소가 아닌 '조경과 2층' 같은 기록에 핀을 임의로 찍지 않는다.
-function looksLikeAddress(value: string): boolean {
-  return /(?:특별시|광역시|특별자치|도\s|시\s|군\s|구\s|읍\s|면\s|동\s|로\s?\d|길\s?\d)/.test(value);
-}
 
 export async function getSalesMapItems(): Promise<SalesMapItem[]> {
   const [partners, governments] = await Promise.all([

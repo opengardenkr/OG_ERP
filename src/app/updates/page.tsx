@@ -8,11 +8,11 @@ export const metadata = {
 
 const updates = [
   { title: "식물 고유번호", desc: "국내 54종에 OG-P 번호가 생겼고, 규격별 상품 59건과 연결했어요.", stage: "Airtable 적용 완료", ok: true },
-  { title: "사진 카탈로그", desc: "식물을 사진으로 찾고 골라볼 수 있도록 수정 코드를 준비했어요.", stage: "코드 테스트 완료 · 배포 전", ok: false },
-  { title: "사진 워터마크", desc: "고객에게 보여주는 사진 하단에 오픈가든 로고를 넣는 기능을 준비했어요.", stage: "코드 테스트 완료 · 배포 전", ok: false },
+  { title: "사진 카탈로그", desc: "사진 갤러리에 로고 사진 API와 검색·ERP 전달 기능을 통합하는 웹사이트 PR을 준비했어요.", stage: "별도 웹사이트 PR · 운영 미반영", ok: false },
+  { title: "사진 워터마크", desc: "사진 파일에 오픈가든 로고를 합성하는 웹사이트 기능입니다. ERP와 별도로 반영해야 해요.", stage: "별도 웹사이트 PR · 운영 미반영", ok: false },
   { title: "제안서·견적서 연동", desc: "웹 카탈로그가 보내는 식물 목록을 제안서로 불러오고, 견적서용 목록을 복사할 수 있어요. 웹 카탈로그 공개는 별도예요.", stage: "이번 ERP 업데이트에 연결 코드 포함 · 연동 테스트 필요", ok: false },
-  { title: "검색 노출 개선", desc: "품종별 검색 페이지와 사이트맵을 만들었어요. 검색엔진 등록은 남아 있어요.", stage: "코드 테스트 완료 · 배포 전", ok: false },
-  { title: "영업 지도", desc: "거래처와 관공서 기록을 같은 화면에서 확인해요. 실제 지도 핀은 네이버 지도 설정을 마친 뒤 확인해야 해요.", stage: "이번 ERP 업데이트에 포함 · 지도 인증 필요", ok: false },
+  { title: "검색 노출 개선", desc: "품종별 HTML 페이지와 사이트맵을 웹사이트 PR에 추가했어요. 운영 반영·검색엔진 등록은 남아 있어요.", stage: "별도 웹사이트 PR · 운영 미반영", ok: false },
+  { title: "영업 지도", desc: "거래처와 관공서 기록을 같은 화면에서 확인해요. Preview에서 거래처·지자체 조회와 검색을 확인했어요. 지도 키가 없어 핀 표시는 아직 안 돼요.", stage: "이번 ERP 업데이트에 포함 · 지도 인증 필요", ok: false },
   { title: "새 버전 알림", desc: "ERP가 업데이트되면 알려줘요. 일을 쓰는 중이라면 자동으로 새로고침하지 않아요.", stage: "이번 ERP 업데이트에 포함 · 배포 후 검증", ok: false },
 ];
 
@@ -30,7 +30,7 @@ export default function UpdatesPage() {
           <article key={item.title} className="rounded-lg border border-line bg-white p-4">
             <h2 className="font-semibold text-ink">{item.title}</h2>
             <p className="mt-2 text-sm text-muted">{item.desc}</p>
-            <p className={`mt-3 text-xs font-semibold ${item.ok ? "text-green-700" : "text-amber-700"}`}>{isPreview && ["제안서·견적서 연동", "영업 지도", "새 버전 알림"].includes(item.title) ? `Preview 반영 · ${item.title === "영업 지도" ? "지도 인증·핀 표시 확인 필요" : item.title === "새 버전 알림" ? "새 배포 감지·입력 보호 확인 필요" : "선택 품목 가져오기 확인 필요"}` : item.stage}</p>
+            <p className={`mt-3 text-xs font-semibold ${item.ok ? "text-green-700" : "text-amber-700"}`}>{isPreview && ["제안서·견적서 연동", "영업 지도", "새 버전 알림"].includes(item.title) ? `Preview 반영 · ${item.title === "영업 지도" ? "목록·검색 확인 · 지도 키 미설정" : item.title === "새 버전 알림" ? "새 배포 감지·입력 보호 확인 필요" : "선택 품목 가져오기 확인 필요"}` : item.stage}</p>
           </article>
         ))}
       </div>
