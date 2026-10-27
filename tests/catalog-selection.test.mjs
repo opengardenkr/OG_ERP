@@ -16,6 +16,6 @@ test('malformed, empty, oversized and incomplete selections fail closed',()=>{
 });
 test('only public OpenGarden image routes are imported, including website previews',()=>{
  const tail='/api/plant-image?group=immediate&id=rec12345678901234';
- for(const host of ['open-garden.co.kr','opengarden-web.vercel.app','opengarden-web-git-codex-catalog-integration-20261027-opengarden.vercel.app'])assert.ok(safeImage('https://'+host+tail));
+ for(const host of ['opengardenweb-git-codex-catalog-integration-20261027-opengarden.vercel.app','open-garden.co.kr','opengarden-web.vercel.app','opengarden-web-git-codex-catalog-integration-20261027-opengarden.vercel.app'])assert.ok(safeImage('https://'+host+tail));
  for(const url of ['http://open-garden.co.kr'+tail,'https://open-garden.co.kr.evil.com'+tail,'https://user:pass@open-garden.co.kr'+tail,'https://open-garden.co.kr/api/stock','https://evil.vercel.app'+tail])assert.equal(safeImage(url),'');
 });

@@ -2,7 +2,7 @@
   function safeImage(value){
     try{
       const u=new URL(value);
-      const host=u.hostname==='open-garden.co.kr'||u.hostname==='opengarden-web.vercel.app'||/^opengarden-web-[a-z0-9-]+-opengarden\.vercel\.app$/.test(u.hostname);
+      const host=u.hostname==='open-garden.co.kr'||u.hostname==='opengarden-web.vercel.app'||u.hostname==='opengardenweb-git-codex-catalog-integration-20261027-opengarden.vercel.app'||/^opengarden-web-[a-z0-9-]+-opengarden\.vercel\.app$/.test(u.hostname);
       if(u.protocol!=='https:'||u.port||u.username||u.password||!host||u.pathname!=='/api/plant-image')return '';
       if(!['immediate','preorder'].includes(u.searchParams.get('group'))||!/^rec[A-Za-z0-9]{14}$/.test(u.searchParams.get('id')||''))return '';
       return u.href;

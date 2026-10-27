@@ -8,11 +8,11 @@ function harness(response){
  let states=[],cursor=0,first=true,reloads=0,dirty=false,saving=false;
  const listeners={},effects=[];
  const react={useState(initial){const i=cursor++;if(!(i in states))states[i]=initial;return [states[i],v=>states[i]=typeof v==='function'?v(states[i]):v];},useCallback:f=>f,useEffect:f=>{if(first)effects.push(f);}};
- const jsx=(type,props)=>({type,props});const module={exports:{}};
+ const jsx=(type,props)=>({type,props});const testModule={exports:{}};
  const doc={visibilityState:'visible',addEventListener:(n,f)=>listeners[n]=f,removeEventListener(){},querySelector:s=>s.includes('form[')?dirty||saving:saving,querySelectorAll:()=>dirty?[{}]:[]};
  const win={setTimeout:()=>1,setInterval:()=>2,addEventListener:(n,f)=>listeners[n]=f,removeEventListener(){},location:{reload:()=>reloads++}};
- vm.runInNewContext(source,{module,exports:module.exports,require:n=>n==='react'?react:{jsx,jsxs:jsx,Fragment:'fragment'},window:win,document:doc,navigator:{onLine:true},fetch:async()=>response,clearTimeout(){},clearInterval(){},queueMicrotask,Element:class{},HTMLFormElement:class{}});
- function render(){cursor=0;const out=module.exports.UpdateNotice({current:{id:'old',label:'Old'}});if(first){first=false;effects.forEach(f=>f());}return out;}
+ vm.runInNewContext(source,{module:testModule,exports:testModule.exports,require:n=>n==='react'?react:{jsx,jsxs:jsx,Fragment:'fragment'},window:win,document:doc,navigator:{onLine:true},fetch:async()=>response,clearTimeout(){},clearInterval(){},queueMicrotask,Element:class{},HTMLFormElement:class{}});
+ function render(){cursor=0;const out=testModule.exports.UpdateNotice({current:{id:'old',label:'Old'}});if(first){first=false;effects.forEach(f=>f());}return out;}
  function nodes(root){if(!root||typeof root!=='object')return [];return [root,...[root.props?.children].flat(Infinity).flatMap(nodes)];}
  const button=label=>nodes(render()).find(n=>n.type==='button'&&n.props.children===label);
  return {button,render,listeners,setDirty:v=>dirty=v,setSaving:v=>saving=v,get reloads(){return reloads;}};
