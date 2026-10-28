@@ -16,6 +16,7 @@ export type PortalEventType =
 
 export type PortalEvent = {
   id: string;
+  google?: { calendarId: string; eventId: string; etag: string; colorId?: string; recurring?: boolean; editable: boolean };
   title: string;
   /** 종일 일정은 YYYY-MM-DD, 시간 일정은 ISO */
   start: string;

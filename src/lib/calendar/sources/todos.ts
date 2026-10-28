@@ -2,6 +2,7 @@ import "server-only";
 
 import { getTodosWithDueDate } from "@/lib/airtable/todos";
 import type { PortalEvent } from "@/lib/calendar/types";
+import { eventDate } from "@/lib/calendar/types";
 import { categoryHex } from "@/lib/labels";
 
 /**
@@ -20,8 +21,8 @@ export async function getTodoEvents(
   const result = await getTodosWithDueDate();
   if (!result.ok) throw new Error(result.message);
 
-  const start = from.toISOString().slice(0, 10);
-  const end = to.toISOString().slice(0, 10);
+  const start = eventDate(from.toISOString());
+  const end = eventDate(to.toISOString());
 
   return result.data
     .filter((todo) => {

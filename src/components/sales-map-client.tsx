@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { SalesMapItem } from "@/lib/airtable/sales-map";
 
 type Position = { lat: number; lng: number };
-type Kind = "partner" | "government";
+type Kind = "partner" | "government" | "all";
 
 type Props = {
   entries: SalesMapItem[];
@@ -68,7 +68,7 @@ function findLocation(query: string): Promise<Position | null> {
 }
 
 export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
-  const [kind, setKind] = useState<Kind>("partner");
+  const [kind, setKind] = useState<Kind>("all");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [locations, setLocations] = useState<Record<string, Position | null>>({});
@@ -79,7 +79,7 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
   const markers = useRef<any[]>([]);
   const [mapInitialized, setMapInitialized] = useState(false);
 
-  const rows = useMemo(() => entries.filter(item => item.kind === kind), [entries, kind]);
+  const rows = useMemo(() => entries.filter(item => kind === "all" || item.kind === kind), [entries, kind]);
   const filtered = useMemo(() => rows.filter(item =>
     [item.name, item.address, item.detail, item.category].some(s => s.toLowerCase().includes(query.trim().toLowerCase()))
   ), [rows, query]);
@@ -183,20 +183,20 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2" aria-label="지도 표시 대상">
+        <button type="button" aria-pressed={kind === "all"} onClick={() => { setKind("all"); setSelectedId(null); }} className={`btn text-sm ${kind === "all" ? "border-brand-600 bg-brand-50 font-semibold" : ""}`}>전체 {entries.length}</button>
         <button type="button" onClick={() => { setKind("partner"); setSelectedId(null); }} className={`btn text-sm ${kind === "partner" ? "border-green-600 bg-green-50 font-semibold" : ""}`}>
-          거래처 {groupCount("partner")}
+          업체(거래처) {groupCount("partner")}
         </button>
         <button type="button" onClick={() => { setKind("government"); setSelectedId(null); }} className={`btn text-sm ${kind === "government" ? "border-blue-600 bg-blue-50 font-semibold" : ""}`}>
-          지자체 방문기록 {groupCount("government")}
+          관공서 {groupCount("government")}
         </button>
-        <a className="btn text-sm" href="https://map.open-garden.co.kr" target="_blank" rel="noopener noreferrer">기존 관공서 지도 ↗</a>
       </div>
       {warning && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{warning}</p>}
       {mapProblem && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{mapProblem}</p>}
       {!naverMapClientId && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">지도 API 키가 설정되지 않았습니다. NAVER_MAPS_CLIENT_ID 환경변수와 네이버 클라우드의 등록 도메인을 확인해 주세요. 아래 목록은 이용할 수 있습니다.</p>}
-      <div className="grid min-h-[520px] gap-3 lg:grid-cols-[330px_minmax(0,1fr)]">
-        <div className="flex min-h-[450px] flex-col overflow-hidden rounded-lg border border-line bg-white">
+      <div className="grid min-h-[calc(100dvh-220px)] gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="order-2 flex min-h-[280px] flex-col overflow-hidden rounded-lg border border-line bg-white">
           <div className="border-b border-line p-3">
             <label className="mb-1 block text-xs font-semibold" htmlFor="sales-map-search">거래처·지역 검색</label>
             <input id="sales-map-search" className="w-full rounded border border-line px-3 py-2 text-sm" placeholder="회사 이름, 지역, 업무 종류" value={query} onChange={e => setQuery(e.target.value)} />
@@ -207,13 +207,13 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
               <button role="listitem" key={item.id} type="button" onClick={() => setSelectedId(item.id)} className={`block w-full border-b border-line px-3 py-3 text-left hover:bg-canvas ${selectedId === item.id ? "bg-green-50" : ""}`}>
                 <span className="block text-sm font-semibold">{item.name}</span>
                 <span className="mt-1 block text-xs text-muted">{item.category} · {item.address || "주소 확인 필요"}</span>
-                {item.approximate && <span className="mt-1 block text-xs text-amber-700">관할지역의 대략 위치 · 방문 장소 아님</span>}
+                {item.approximate && <span className="mt-1 block text-xs text-amber-700">상세 주소 미확인 · 지도 핀 제외</span>}
               </button>
             ))}
             {!filtered.length && <p className="p-3 text-sm text-muted">해당하는 기록이 없습니다.</p>}
           </div>
         </div>
-        <div className="flex min-h-[520px] flex-col overflow-hidden rounded-lg border border-line bg-white">
+        <div className="order-1 flex min-h-[55dvh] flex-col overflow-hidden rounded-lg border border-line bg-white">
           <div className="relative min-h-[330px] flex-1">
             <div ref={container} className="absolute inset-0" aria-label="네이버 지도" />
             {!mapReady && <div className="absolute inset-0 flex items-center justify-center bg-canvas text-center text-sm text-muted">네이버 지도 인증 후 이곳에 거래처와 지자체 위치가 표시됩니다.</div>}
@@ -229,10 +229,10 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
               <a className="text-green-700 underline" href={`https://airtable.com/appzLstFHtHcQlWSu/${selected.kind === "partner" ? "tblTGohUQYwkdLjpV" : "tblIkbVaxbApkV0oe"}/${selected.id}`} target="_blank" rel="noopener noreferrer">Airtable 기록 열기 ↗</a>
               {selected.address && <a className="text-green-700 underline" href={`https://map.naver.com/p/search/${encodeURIComponent(selected.address)}`} target="_blank" rel="noopener noreferrer">네이버에서 위치 확인 ↗</a>}
             </div>
-          </div> : <p className="border-t border-line p-3 text-xs text-muted">왼쪽에서 기록이나 지도 핀을 선택해 자세한 정보를 확인하세요.</p>}
+          </div> : <p className="border-t border-line p-3 text-xs text-muted">목록에서 기록이나 지도 핀을 선택해 자세한 정보를 확인하세요.</p>}
         </div>
       </div>
-      <p className="text-xs text-muted">주소가 없거나 검색되지 않은 기록은 지도에 억지로 표시하지 않습니다. 지자체는 관할 지역만 있는 경우 대략 위치로 구분합니다. 위치 확인 결과는 직원의 브라우저 세션에만 보관됩니다.</p>
+      <p className="text-xs text-muted">주소가 없거나 검색되지 않은 기록은 지도에 억지로 표시하지 않습니다. 관공서의 관할 지역만 있고 상세 주소가 없으면 핀을 표시하지 않습니다. 위치 확인 결과는 직원의 브라우저 세션에만 보관됩니다.</p>
     </div>
   );
 }

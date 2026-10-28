@@ -6,8 +6,10 @@ import { usePathname } from "next/navigation";
 const ITEMS = [
   { href: "/", label: "대시보드" },
   { href: "/calendar", label: "일정" },
-  { href: "/todos", label: "할 일" },
-  { href: "/programs", label: "프로그램" },
+  { href: "/proposal", label: "제안서" },
+  { href: "/quote", label: "견적서" },
+  { href: "/catalog", label: "카탈로그 선택" },
+  { href: "/catalog/manage", label: "품종 관리" },
   { href: "/sales-map", label: "영업 지도" },
   { href: "/updates", label: "업데이트" },
 ] as const;
@@ -22,7 +24,7 @@ export function Nav() {
         const active =
           item.href === "/"
             ? pathname === "/"
-            : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            : pathname === item.href || (item.href !== "/catalog" && pathname.startsWith(`${item.href}/`));
 
         return (
           <Link

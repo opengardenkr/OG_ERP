@@ -5,7 +5,19 @@ import { auth } from "@/lib/auth";
  * public/tools/ 의 정적 HTML 도구도 여기서 함께 막힌다.
  */
 export default auth((req) => {
-  if (req.auth) return;
+  if (req.auth) {
+    const routes: Record<string, string> = {
+      "/tools/proposal.html": "/proposal", "/tools/quote.html": "/quote",
+      "/tools/catalog-bridge.html": "/catalog",
+    };
+    const destination = routes[req.nextUrl.pathname];
+    if (destination && req.nextUrl.searchParams.get("embedded") !== "1") {
+      const url = new URL(destination, req.nextUrl.origin);
+      url.search = req.nextUrl.search;
+      return Response.redirect(url);
+    }
+    return;
+  }
 
   const url = new URL("/login", req.nextUrl.origin);
   url.searchParams.set("from", req.nextUrl.pathname + req.nextUrl.search);
