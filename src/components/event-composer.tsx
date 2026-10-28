@@ -190,7 +190,7 @@ function EventForm({
   };
 
   return (
-    <form action={action}>
+    <form data-og-saving={pending ? "true" : undefined} action={action}>
       <div className="flex flex-col gap-4 px-5 py-5">
         <Field label="제목" required>
           <input

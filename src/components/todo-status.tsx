@@ -37,7 +37,7 @@ export function TodoStatusSelect({
   }
 
   return (
-    <span className="inline-flex items-center gap-1">
+    <span data-og-ignore-draft data-og-saving={pending ? "true" : undefined} className="inline-flex items-center gap-1">
       <select
         value={shown}
         disabled={pending}
