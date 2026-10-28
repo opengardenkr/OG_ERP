@@ -17,7 +17,7 @@ export default async function SalesMapPage() {
   }
 
   return (
-    <AppShell title="영업 지도" subtitle="거래처와 지자체 방문 기록을 한곳에서 확인합니다">
+    <AppShell title="영업 지도" subtitle="관공서·업체를 지도에서 검색하고 기존 기록을 확인합니다">
       <SalesMapClient
         entries={entries}
         naverMapClientId={process.env.NAVER_MAPS_CLIENT_ID?.trim() ?? ""}

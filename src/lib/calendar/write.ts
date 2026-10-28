@@ -38,36 +38,40 @@ function nextDay(date: string): string {
 export async function createGoogleEvent(
   event: NewEvent,
   accessToken: string,
+  existing?: { eventId: string; etag: string },
 ): Promise<Result<null>> {
   const body = {
     summary: event.title,
-    location: event.location || undefined,
-    description: event.description || undefined,
+    location: event.location || "",
+    description: event.description || "",
     colorId: EVENT_COLORS.some((color) => color.id === event.colorId)
       ? event.colorId
-      : undefined,
+      : null,
     ...(event.allDay
       ? {
-          start: { date: event.startDate },
-          end: { date: nextDay(event.endDate) },
+          start: { date: event.startDate, dateTime: null, timeZone: null },
+          end: { date: nextDay(event.endDate), dateTime: null, timeZone: null },
         }
       : {
-          start: { dateTime: `${event.startDate}T${event.startTime}:00`, timeZone: TIME_ZONE },
-          end: { dateTime: `${event.endDate}T${event.endTime}:00`, timeZone: TIME_ZONE },
+          start: { date: null, dateTime: `${event.startDate}T${event.startTime}:00`, timeZone: TIME_ZONE },
+          end: { date: null, dateTime: `${event.endDate}T${event.endTime}:00`, timeZone: TIME_ZONE },
         }),
   };
 
-  const response = await fetch(`${API}/${encodeURIComponent(event.calendarId)}/events`, {
-    method: "POST",
+  const response = await fetch(`${API}/${encodeURIComponent(event.calendarId)}/events${existing ? `/${encodeURIComponent(existing.eventId)}` : ""}`, {
+    method: existing ? "PATCH" : "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
+      ...(existing ? { "If-Match": existing.etag } : {}),
     },
     body: JSON.stringify(body),
     cache: "no-store",
   });
 
   if (response.ok) return ok(null);
+  if (response.status === 412) return fail("다른 화면에서 변경된 일정입니다. 창을 닫고 새로고침 후 다시 시도하세요.");
+  if (response.status === 404 || response.status === 410) return fail("이미 삭제되었거나 접근할 수 없는 일정입니다.");
   if (response.status === 401) {
     return fail("구글 로그인이 만료됐다. 로그아웃했다가 다시 로그인해라.");
   }
@@ -76,4 +80,15 @@ export async function createGoogleEvent(
     return fail("일정을 넣을 권한이 없다. 로그아웃했다가 다시 로그인해 권한에 동의해라.");
   }
   return fail(`구글 캘린더가 일정을 받지 않았다 (${response.status}).`);
+}
+
+export async function deleteGoogleEvent(calendarId: string, eventId: string, etag: string, accessToken: string): Promise<Result<null>> {
+  const response = await fetch(`${API}/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
+    method: "DELETE", headers: { Authorization: `Bearer ${accessToken}`, "If-Match": etag }, cache: "no-store",
+  });
+  if (response.ok || response.status === 410) return ok(null);
+  if (response.status === 412) return fail("다른 화면에서 변경된 일정입니다. 새로고침 후 다시 확인하세요.");
+  if (response.status === 403) return fail("이 일정을 삭제할 권한이 없습니다.");
+  if (response.status === 401) return fail("로그인이 만료되었습니다. 다시 로그인하세요.");
+  return fail(`일정을 삭제하지 못했습니다 (${response.status}).`);
 }

@@ -98,7 +98,7 @@ export async function getSalesMapItems(): Promise<SalesMapItem[]> {
       kind: "government" as const,
       name: cleaned(f.지역관할) || cleaned(f.지역) || "지역 미등록",
       address: fullAddress || region,
-      geocodeQuery: fullAddress || region,
+      geocodeQuery: fullAddress,
       approximate: !fullAddress,
       detail: location,
       category: cleaned(f.반응) || "미분류",

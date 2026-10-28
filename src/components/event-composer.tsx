@@ -2,20 +2,20 @@
 
 import { createContext, useActionState, useContext, useState } from "react";
 
-import { createEventAction, type ActionState } from "@/app/calendar-actions";
+import { createEventAction, deleteEventAction, type ActionState } from "@/app/calendar-actions";
 import { Modal } from "@/components/modal";
 import { EVENT_COLORS } from "@/lib/calendar/colors";
-import type { WritableCalendar } from "@/lib/calendar/types";
+import { eventDate, eventRange, type PortalEvent, type WritableCalendar } from "@/lib/calendar/types";
 
 /**
  * 일정 등록 창. 포털을 떠나지 않고 구글 캘린더에 일정을 넣는다.
  *
  * 화면 어디서든(버튼, 달력 칸) `open()`으로 연다. 달력 칸에서 열면
  * 그 날짜·시각이 채워져 있다 — 날짜를 다시 고르게 하지 않는다.
- * 반복·첨부처럼 드문 설정은 "구글에서 자세히"로 넘긴다. (원칙 3)
+ * 편집·삭제도 같은 창에서 처리하고 원본 데이터는 Google에 유지한다.
  */
 
-type Draft = { date: string; hour?: number; allDay: boolean };
+type Draft = { date: string; hour?: number; allDay: boolean; event?: PortalEvent };
 
 const ComposerContext = createContext<((draft?: Partial<Draft>) => void) | null>(null);
 
@@ -24,12 +24,6 @@ function todayInSeoul(): string {
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
-
-function addDays(date: string, days: number): string {
-  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-}
 
 /** 한 시간 뒤. 자정을 넘기면 23:59에서 멈춘다 — 하루를 넘기는 일정은 날짜를 직접 고친다. */
 function hourLater(time: string): string {
@@ -49,7 +43,7 @@ export function EventComposerProvider({
   const [serial, setSerial] = useState(0);
 
   const open = (next?: Partial<Draft>) => {
-    setDraft({ date: next?.date ?? todayInSeoul(), hour: next?.hour, allDay: next?.allDay ?? false });
+    setDraft({ date: next?.date ?? todayInSeoul(), hour: next?.hour, allDay: next?.allDay ?? false, event: next?.event });
     setSerial((n) => n + 1);
   };
   const close = () => setDraft(null);
@@ -57,7 +51,7 @@ export function EventComposerProvider({
   return (
     <ComposerContext.Provider value={open}>
       {children}
-      <Modal open={draft !== null} onClose={close} title="일정 만들기" width="max-w-xl">
+      <Modal open={draft !== null} onClose={close} title={draft?.event ? "일정 상세·수정" : "일정 만들기"} width="max-w-xl">
         {draft ? (
           <EventForm key={serial} draft={draft} calendars={calendars} onDone={close} />
         ) : null}
@@ -66,18 +60,25 @@ export function EventComposerProvider({
   );
 }
 
+export function OpenEventButton({ event, className }: { event: PortalEvent; className?: string }) {
+  const open = useContext(ComposerContext);
+  return <button type="button" className={`text-left ${className ?? ""}`} onClick={() => open?.({ event, date: eventDate(event.start), allDay: event.allDay })} title={event.title}>{event.title}</button>;
+}
+
 /** [일정 추가] 버튼. 창은 오늘 날짜로 열린다. */
 export function ComposeButton({
   className = "btn-primary",
   children = "일정 추가",
+  date,
 }: {
   className?: string;
   children?: React.ReactNode;
+  date?: string;
 }) {
   const open = useContext(ComposerContext);
   if (!open) return null;
   return (
-    <button type="button" onClick={() => open()} className={className}>
+    <button type="button" onClick={() => open(date ? { date } : undefined)} className={className}>
       {children}
     </button>
   );
@@ -146,21 +147,25 @@ function EventForm({
   calendars: WritableCalendar[];
   onDone: () => void;
 }) {
+  const existing = draft.event;
+  const editable = !existing || (existing.google?.editable && calendars.some(c => c.id === existing.google?.calendarId));
+  const clock = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));
   const firstTime = `${pad(draft.hour ?? 9)}:00`;
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(existing?.title ?? "");
   const [allDay, setAllDay] = useState(draft.allDay);
   const [startDate, setStartDate] = useState(draft.date);
-  const [endDate, setEndDate] = useState(draft.date);
-  const [startTime, setStartTime] = useState(firstTime);
-  const [endTime, setEndTime] = useState(hourLater(firstTime));
-  const [location, setLocation] = useState("");
-  const [description, setDescription] = useState("");
-  const [calendarId, setCalendarId] = useState(calendars[0]?.id ?? "");
-  const [colorId, setColorId] = useState("");
+  const [endDate, setEndDate] = useState(existing ? eventRange(existing).end : draft.date);
+  const [startTime, setStartTime] = useState(existing && !existing.allDay ? clock(existing.start) : firstTime);
+  const [endTime, setEndTime] = useState(existing?.end && !existing.allDay ? clock(existing.end) : hourLater(firstTime));
+  const [location, setLocation] = useState(existing?.location ?? "");
+  const [description, setDescription] = useState(existing?.description ?? "");
+  const [calendarId, setCalendarId] = useState(existing?.google?.calendarId ?? calendars[0]?.id ?? "");
+  const [colorId, setColorId] = useState(existing?.google?.colorId ?? "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const [state, action, pending] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
-      const next = await createEventAction(prev, formData);
+      const next = formData.get("operation") === "delete" ? await deleteEventAction(formData) : await createEventAction(prev, formData);
       // 화면 새로고침은 서버 액션이 한다(`refresh()`).
       if (!next.error) onDone();
       return next;
@@ -168,6 +173,9 @@ function EventForm({
     { error: null },
   );
 
+  if (!editable) {
+    return <div className="space-y-3 p-5 text-sm"><h3 className="font-semibold">{existing?.title}</h3><p>{existing ? eventRange(existing).start : ""} ~ {existing ? eventRange(existing).end : ""} (한국 시간)</p>{existing && !existing.allDay ? <p>{clock(existing.start)} ~ {existing.end ? clock(existing.end) : ""}</p> : null}<p>{existing?.location}</p><p className="whitespace-pre-wrap">{existing?.description}</p><p className="text-muted">읽기 전용 일정입니다. 수정 권한이 있는 캘린더의 일정만 편집할 수 있습니다.</p><button type="button" className="btn" onClick={onDone}>닫기</button></div>;
+  }
   if (calendars.length === 0) {
     return (
       <div className="px-5 py-6 text-sm text-muted">
@@ -191,12 +199,16 @@ function EventForm({
 
   return (
     <form data-og-saving={pending ? "true" : undefined} action={action}>
-      <div className="flex flex-col gap-4 px-5 py-5">
+      {existing?.google ? <><input type="hidden" name="eventId" value={existing.google.eventId} /><input type="hidden" name="etag" value={existing.google.etag} /><input type="hidden" name="calendarId" value={calendarId} /></> : null}
+      <input type="hidden" name="confirmed" value={confirmDelete ? "yes" : "no"} />
+      <fieldset disabled={pending || confirmDelete} className="flex flex-col gap-4 px-5 py-5">
+        <p className="text-xs text-muted">시간대: Asia/Seoul · Google 캘린더에 저장됩니다.{existing?.google?.recurring ? " 반복 일정 중 이 회차만 변경합니다." : ""}</p>
         <Field label="제목" required>
           <input
             name="title"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
+            maxLength={300}
             placeholder="일정 제목"
             className="field w-full"
             required
@@ -260,6 +272,7 @@ function EventForm({
 
         <Field label="장소">
           <input
+            maxLength={1000}
             name="location"
             value={location}
             onChange={(event) => setLocation(event.target.value)}
@@ -269,6 +282,7 @@ function EventForm({
 
         <Field label="설명">
           <textarea
+            maxLength={8000}
             name="description"
             rows={3}
             value={description}
@@ -279,7 +293,8 @@ function EventForm({
 
         <Field label="캘린더">
           <select
-            name="calendarId"
+            disabled={Boolean(existing)}
+            name={existing ? undefined : "calendarId"}
             value={calendarId}
             onChange={(event) => setCalendarId(event.target.value)}
             className="field w-full"
@@ -314,36 +329,17 @@ function EventForm({
             ))}
           </div>
         </fieldset>
-      </div>
+      </fieldset>
 
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-3">
-        {state.error ? (
-          <span className="mr-auto text-sm text-danger">{state.error}</span>
-        ) : (
-          <a
-            href={googleTemplateUrl({
-              title,
-              allDay,
-              startDate,
-              endDate,
-              startTime,
-              endTime,
-              location,
-              description,
-              calendarId,
-            })}
-            target="_blank"
-            rel="noreferrer"
-            className="mr-auto text-xs text-muted hover:text-ink hover:underline"
-          >
-            반복·알림은 구글에서 ↗
-          </a>
-        )}
-        <button type="button" onClick={onDone} className="btn">
+        {state.error ? <span role="alert" className="mr-auto text-sm text-danger">{state.error}</span> : null}
+        {existing && !confirmDelete ? <button type="button" disabled={pending} className="btn mr-auto text-danger" onClick={() => setConfirmDelete(true)}>일정 삭제</button> : null}
+        {confirmDelete ? <div role="alert" className="w-full space-y-2"><p className="text-sm">“{title}” 일정을 삭제할까요?{existing?.google?.recurring ? " 반복 일정 중 이 회차만 삭제합니다." : ""} Google 캘린더에서도 삭제됩니다.</p><button type="button" className="btn" disabled={pending} onClick={() => setConfirmDelete(false)}>돌아가기</button><button type="submit" name="operation" value="delete" disabled={pending} formNoValidate className="btn text-danger">{pending ? "삭제 중…" : "삭제 확인"}</button></div> : null}
+        <button type="button" onClick={onDone} disabled={pending} className="btn">
           취소
         </button>
-        <button type="submit" disabled={pending} className="btn-primary">
-          {pending ? "만드는 중" : "만들기"}
+        <button type="submit" name="operation" value="save" disabled={pending || confirmDelete} className="btn-primary">
+          {pending ? "저장 중…" : existing ? "변경 저장" : "만들기"}
         </button>
       </div>
     </form>
@@ -378,33 +374,4 @@ function Swatch({
       {wide ? name : selected ? "✓" : null}
     </button>
   );
-}
-
-/** 지금 적은 내용을 그대로 채운 구글 등록 화면 주소. 반복·첨부가 필요할 때만 쓴다. */
-function googleTemplateUrl(form: {
-  title: string;
-  allDay: boolean;
-  startDate: string;
-  endDate: string;
-  startTime: string;
-  endTime: string;
-  location: string;
-  description: string;
-  calendarId: string;
-}): string {
-  const compact = (date: string) => date.replaceAll("-", "");
-  const dates = form.allDay
-    ? `${compact(form.startDate)}/${compact(addDays(form.endDate, 1))}`
-    : `${compact(form.startDate)}T${form.startTime.replace(":", "")}00/` +
-      `${compact(form.endDate)}T${form.endTime.replace(":", "")}00`;
-
-  const url = new URL("https://calendar.google.com/calendar/render");
-  url.searchParams.set("action", "TEMPLATE");
-  url.searchParams.set("text", form.title);
-  url.searchParams.set("dates", dates);
-  url.searchParams.set("ctz", "Asia/Seoul");
-  if (form.location) url.searchParams.set("location", form.location);
-  if (form.description) url.searchParams.set("details", form.description);
-  if (form.calendarId) url.searchParams.set("src", form.calendarId);
-  return url.toString();
 }

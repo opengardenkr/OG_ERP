@@ -19,3 +19,15 @@ test('only public OpenGarden image routes are imported, including website previe
  for(const host of ['opengardenweb-git-codex-catalog-integration-20261027-opengarden.vercel.app','open-garden.co.kr','opengarden-web.vercel.app','opengarden-web-git-codex-catalog-integration-20261027-opengarden.vercel.app'])assert.ok(safeImage('https://'+host+tail));
  for(const url of ['http://open-garden.co.kr'+tail,'https://open-garden.co.kr.evil.com'+tail,'https://user:pass@open-garden.co.kr'+tail,'https://open-garden.co.kr/api/stock','https://evil.vercel.app'+tail])assert.equal(safeImage(url),'');
 });
+test('exact match avoids ambiguous cultivars and sizes',()=>{
+ const {match}=require('../public/tools/catalog-selection.js');
+ const rows=[{...item,plantCode:'SKU-1'},{...item,size:'C3',plantCode:'SKU-2'}];
+ assert.equal(match({kname:'수국',size:'C2'},rows).plantCode,'SKU-1');
+ assert.equal(match({kname:'수국',size:'C4'},rows),null);
+ assert.equal(match({kname:'수국',size:'C2'},[rows[0],{...rows[0],plantCode:'another'}]),null);
+ assert.equal(match({kname:'수국',size:'C2',sname:'Wrong cultivar'},rows),null);
+});
+test('selection encoding round trips without importing financial data',()=>{
+ const {encode}=require('../public/tools/catalog-selection.js');
+ assert.equal(decode(encode([item]))[0].kname,item.kname);
+});

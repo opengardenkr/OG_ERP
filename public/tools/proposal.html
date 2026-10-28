@@ -510,7 +510,16 @@
     .sec-row-empty { visibility: hidden; }
   }
 </style>
-</head>
+<style>
+[contenteditable]{outline:none;border-bottom:1px dashed #879c88;cursor:text;min-height:1em}
+[contenteditable]:focus{background:#f2f8ed;border-color:#245a35}
+.card-description{font-size:7pt;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere;max-height:3em;overflow:hidden}
+.card-description:empty:before{content:attr(data-placeholder);color:#879c88}
+.card-order{display:flex;justify-content:flex-end;gap:4px}.card-order button{font:11px system-ui;padding:2px 5px;background:white;border:1px solid #ccd7ca;cursor:pointer}
+.photo-img{object-fit:contain!important}.simple-note{padding:12px;background:#f2f6ef;color:#234932;font-size:12px;line-height:1.6}
+#panel details{border-top:1px solid #ddd;padding:12px}#panel details section{padding:8px 0;border:0}#panel summary{cursor:pointer;font-size:13px;font-weight:600}
+@media print{[contenteditable]{border:0;background:none}.card-order,.card-description:empty{display:none!important}}
+</style></head>
 <body>
 
 <!-- ═══════════════ 좌측 설정 패널 ═══════════════ -->
@@ -668,7 +677,7 @@
     <div class="btn-row" style="margin-top:0;">
       <button id="saveSnapBtn" class="btn btn-primary" type="button">현재 상태 저장</button>
     </div>
-    <div class="hint" style="margin-top:6px;">인쇄 전에 눌러두면 카드 정리·그룹·사진 선택·문서 설정이 통째로 저장됩니다. <b>5일 뒤 자동으로 지워집니다.</b></div>
+    <div class="hint" style="margin-top:6px;">인쇄 전에 눌러두면 카드 정리·그룹·사진 선택·문서 설정이 통째로 저장됩니다. <b>직접 삭제하기 전까지 이 브라우저에 보관됩니다.</b></div>
     <div id="snapList" style="margin-top:8px;"></div>
     <div id="storageInfo" class="hint" style="margin-top:10px;"></div>
     <div class="btn-row">
@@ -711,6 +720,7 @@ const BRAND = {
   contactLine: '카카오톡 "오픈가든" 검색',
 };
 
+const cardEdits = new Map();
 const CARDS_PER_PAGE = 9;
 // 규격 표는 항상 이 줄 수만큼 자리를 차지한다 (모자라면 빈 줄로 채우고, 넘치면 마지막 줄에 묶음).
 // → 규격 개수와 상관없이 모든 카드 높이가 동일해진다.
@@ -1041,7 +1051,8 @@ const BG_BOTTOM_SVG = `
 const KAKAO_SVG = `
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C6.86 3 2.7 6.26 2.7 10.28c0 2.58 1.72 4.85 4.31 6.14l-.88 3.26c-.08.29.25.52.5.35l3.87-2.57c.49.05.99.08 1.5.08 5.14 0 9.3-3.26 9.3-7.26S17.14 3 12 3Z" fill="var(--kakao)"></path></svg>`;
 
-function cardHtml(it) {
+function cardHtml(original) {
+  const it = {...original, ...(cardEdits.get(original.cardKey) || {})};
   const showMoq = it.hasMoq;  // 이 카드에 크레이트당 구수가 하나라도 있으면 가운데 칸 표시
   // 우선순위: 직접 첨부(manual) > DB 사진 > 웹(켜져 있을 때) > 플레이스홀더.
   // 사진 칸을 클릭하면 직접 첨부/교체 (data-cardkey로 카드 식별, 브라우저에 저장).
@@ -1070,11 +1081,13 @@ function cardHtml(it) {
     <article class="card" draggable="true" data-cardkey="${esc(it.cardKey)}">
       <button class="card-exclude" type="button" title="이 카드 제외" data-exclude="${esc(it.cardKey)}">×</button>
       <div class="card-top">
-        <div class="card-kor">${esc(it.kor)}</div>
+        <div class="card-kor" contenteditable="plaintext-only" data-edit="kor" role="textbox" aria-label="품목 제목">${esc(it.kor)}</div>
       </div>
       <div class="card-names">
-        <div class="card-variety">${esc(it.variety)}</div>
+        <div class="card-variety" contenteditable="plaintext-only" data-edit="variety" role="textbox" aria-label="품종명">${esc(it.variety)}</div>
         <div class="card-latin">${esc(it.latin)}</div>
+        <div class="card-description" contenteditable="plaintext-only" data-edit="description" role="textbox" aria-label="간단 설명" data-placeholder="설명 입력">${esc(it.description || "")}</div>
+        <div class="card-order"><button type="button" data-order="-1">← 앞</button><button type="button" data-order="1">뒤 →</button></div>
       </div>
       <div class="card-photo" data-cardkey="${esc(it.cardKey)}"${photoAttrs}>
         <div class="photo-ph">PHOTO 4:3</div>
@@ -1662,7 +1675,8 @@ function storeSnaps(obj) {
   catch { return false; }
 }
 // 기한 지난 스냅샷 제거. 지운 개수를 돌려준다.
-function purgeExpiredSnaps() {
+function purgeExpiredSnaps() { return 0; }
+function legacyPurgeExpiredSnaps() {
   const all = loadSnaps();
   const now = Date.now();
   let removed = 0;
@@ -1697,6 +1711,7 @@ function saveSnapshot() {
       secMode: $('secMode').value, priceSource: $('priceSource').value,
       catFilter: $('catFilter').value,
     },
+    edits: Object.fromEntries(cardEdits),
     data: state.lastDicts,
     groups: groups.map(g => ({ id: g.id, name: g.name, cardKeys: [...g.cardKeys], keepEmpty: !!g.keepEmpty })),
     excluded: [...excludedCards.entries()],
@@ -1712,7 +1727,7 @@ function saveSnapshot() {
     return;
   }
   renderSnapshots();
-  setStatus(`"${snap.name}" 저장됨 · 5일 뒤 자동 삭제`);
+  setStatus(`"${snap.name}" 저장됨 · 이 브라우저에 보관됨`);
 }
 
 function applySnapshot(id) {
@@ -1730,6 +1745,7 @@ function applySnapshot(id) {
   $('priceSource').value = snap.view.priceSource;
   document.querySelectorAll('#gridTabs button').forEach(b => b.classList.toggle('active', b.dataset.grid === snap.view.grid));
 
+  cardEdits.clear(); Object.entries(snap.edits || {}).forEach(([key,value]) => cardEdits.set(key,value));
   state.lastDicts = snap.data;
   state.rows = snap.data.map(mapRow);
   groups = snap.groups.map(g => ({ ...g, cardKeys: [...g.cardKeys] }));
@@ -1762,15 +1778,15 @@ function renderSnapshots() {
   if (!items.length) {
     wrap.innerHTML = '<span class="hint">저장된 제안서가 없습니다.</span>';
   } else {
-    const dayMs = 24 * 60 * 60 * 1000;
+
     wrap.innerHTML = items.map(([id, s]) => {
-      const left = Math.max(0, Math.ceil((s.expiresAt - Date.now()) / dayMs));
+
       const d = new Date(s.savedAt);
       const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       return `<div class="snap-item">
         <div class="snap-main">
           <div class="snap-name">${esc(s.name)}</div>
-          <div class="snap-meta">${when} 저장 · ${s.data.length}행 · <span class="${left <= 1 ? 'snap-soon' : ''}">${left}일 남음</span></div>
+          <div class="snap-meta">${when} 저장 · ${s.data.length}행 · <span>보관 중</span></div>
         </div>
         <button type="button" data-snapload="${esc(id)}">불러오기</button>
         <button type="button" data-snapdel="${esc(id)}" title="삭제">×</button>
@@ -2225,16 +2241,17 @@ loadFontSizes();
   if (savedSec === 'off' || savedSec === 'all' || savedSec === 'auto') $('secMode').value = savedSec;
 }
 renderSnapshots();   // 기한 지난 스냅샷 정리 + 목록·사용량 표시
-$('csvText').value = SAMPLE_TSV; // 첫 실행 시 샘플로 디자인·병합 로직 바로 확인
+$('csvText').value = ''; // 샘플은 버튼을 눌렀을 때만 표시
+// // 첫 실행 시 샘플로 디자인·병합 로직 바로 확인
 applyCsv();
 
 // ═══ 외부 카탈로그 → 제안서 (가격 미포함) ═══
 // og_selection은 공개 식물명/학명/규격/사진만 포함하며 개인·가격 정보가 없습니다.
 (function importCatalogSelection(){
-  const encoded=new URLSearchParams(location.search).get('og_selection');
+  const encoded=new URLSearchParams(location.search).get('og_selection') || sessionStorage.getItem('og_selection_v1');
   if(!encoded)return;
   try{
-    const items=CatalogSelection.decode(encoded);
+    const items=CatalogSelection.remember(CatalogSelection.decode(encoded));
     const cell=v=>'"'+String(v||'').replace(/"/g,'""').replace(/[\r\n]/g,' ')+'"';
     const rows=[['국명','학명','Size (규격)','이미지_URL','카테고리','단가_WON'],
       ...items.map(p=>[p.kname,p.sname,p.size,
@@ -2249,5 +2266,6 @@ applyCsv();
   }catch(e){setStatus('카탈로그 목록을 가져오지 못했습니다: '+e.message,true);}
 })();
 </script>
+<script src="/tools/proposal-editor.js"></script>
 </body>
 </html>

@@ -22,6 +22,7 @@ export class CalendarError extends Error {}
 type Palette = {
   /** calendarId -> hex */
   calendar: Record<string, string>;
+  writable: Set<string>;
 };
 
 /** 대한민국 공휴일 캘린더인가. 이 캘린더는 색을 고정으로 칠한다. */
@@ -33,7 +34,7 @@ async function fetchJson<T>(url: string, accessToken: string): Promise<T | null>
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
     // 색을 바꾸면 곧 반영돼야 한다. 색표는 가벼우니 짧게 잡는다.
-    next: { revalidate: 60 },
+    cache: "no-store",
   });
   if (!response.ok) return null;
   return (await response.json()) as T;
@@ -62,14 +63,18 @@ async function getCalendarList(accessToken: string): Promise<CalendarListItem[]>
  */
 async function getPalette(accessToken: string): Promise<Palette> {
   const calendar: Record<string, string> = {};
+  const writable = new Set<string>();
   for (const item of await getCalendarList(accessToken)) {
+    if (item.accessRole === "owner" || item.accessRole === "writer") writable.add(item.id);
     if (item.backgroundColor) calendar[item.id] = item.backgroundColor;
   }
-  return { calendar };
+  return { calendar, writable };
 }
 
 type GoogleEvent = {
   id: string;
+  etag?: string;
+  recurringEventId?: string;
   status?: string;
   summary?: string;
   colorId?: string;
@@ -96,6 +101,7 @@ function toPortalEvent(
 
   return {
     id: `google:${calendarId}:${event.id}`,
+    google: { calendarId, eventId: event.id, etag: event.etag ?? "", colorId: event.colorId, recurring: Boolean(event.recurringEventId), editable: !holiday && palette.writable.has(calendarId) },
     title: event.summary?.trim() || "(제목 없음)",
     start,
     end: event.end?.dateTime ?? event.end?.date,
