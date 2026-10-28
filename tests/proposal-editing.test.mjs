@@ -20,3 +20,8 @@ test('opening proposal never removes expired user snapshots',()=>{
  const body=proposal.match(/function purgeExpiredSnaps\(\) \{([^}]+)\}/)[1];
  assert.equal(new Function(body)(),0);assert.ok(!body.includes('localStorage'));
 });
+test('bundled quote exposes form bridge methods required by integration',()=>{
+ const names=quote.match(/var Vg=(\[[^\]]+\])/)[1];
+ const exported=vm.runInNewContext(names);
+ for(const name of ['readForm','applyToForm']) assert.ok(exported.includes(name),`${name} must be exposed on window for the catalog bridge`);
+});
