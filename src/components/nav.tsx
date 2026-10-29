@@ -10,6 +10,7 @@ const ITEMS = [
   { href: "/proposal/genus", label: "속명 제안서" },
   { href: "/quote", label: "견적서" },
   { href: "/catalog", label: "카탈로그 선택" },
+  { href: "/catalog/quick", label: "현장 빠른등록" },
   { href: "/catalog/manage", label: "품종 관리" },
   { href: "/sales-map", label: "영업 지도" },
   { href: "/updates", label: "업데이트" },

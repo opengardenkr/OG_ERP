@@ -3,9 +3,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SalesMapItem } from "@/lib/airtable/sales-map";
+import { SalesRoutePlanner } from "@/components/sales-route-planner";
 
 type Position = { lat: number; lng: number };
-type Kind = "partner" | "government" | "all";
+type Kind = "partner" | "government";
 
 type Props = {
   entries: SalesMapItem[];
@@ -68,7 +69,7 @@ function findLocation(query: string): Promise<Position | null> {
 }
 
 export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
-  const [kind, setKind] = useState<Kind>("all");
+  const [visibleKinds, setVisibleKinds] = useState<Record<Kind, boolean>>({ partner:true, government:true });
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [locations, setLocations] = useState<Record<string, Position | null>>({});
@@ -79,7 +80,7 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
   const markers = useRef<any[]>([]);
   const [mapInitialized, setMapInitialized] = useState(false);
 
-  const rows = useMemo(() => entries.filter(item => kind === "all" || item.kind === kind), [entries, kind]);
+  const rows = useMemo(() => entries.filter(item => visibleKinds[item.kind]), [entries, visibleKinds]);
   const filtered = useMemo(() => rows.filter(item =>
     [item.name, item.address, item.detail, item.category].some(s => s.toLowerCase().includes(query.trim().toLowerCase()))
   ), [rows, query]);
@@ -184,13 +185,10 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2" aria-label="지도 표시 대상">
-        <button type="button" aria-pressed={kind === "all"} onClick={() => { setKind("all"); setSelectedId(null); }} className={`btn text-sm ${kind === "all" ? "border-brand-600 bg-brand-50 font-semibold" : ""}`}>전체 {entries.length}</button>
-        <button type="button" onClick={() => { setKind("partner"); setSelectedId(null); }} className={`btn text-sm ${kind === "partner" ? "border-green-600 bg-green-50 font-semibold" : ""}`}>
-          업체(거래처) {groupCount("partner")}
-        </button>
-        <button type="button" onClick={() => { setKind("government"); setSelectedId(null); }} className={`btn text-sm ${kind === "government" ? "border-blue-600 bg-blue-50 font-semibold" : ""}`}>
-          관공서 {groupCount("government")}
-        </button>
+        <button type="button" className="btn text-sm" onClick={() => setVisibleKinds({partner:true,government:true})}>전체 표시 ({entries.length})</button>
+        <button type="button" className="btn text-sm" onClick={() => setVisibleKinds({partner:false,government:false})}>모두 숨기기</button>
+        <button type="button" aria-pressed={visibleKinds.partner} onClick={() => setVisibleKinds(v=>({...v,partner:!v.partner}))} className={`btn text-sm ${visibleKinds.partner ? "border-green-600 bg-green-50 font-semibold" : ""}`}>{visibleKinds.partner ? "✓ " : "+ "}업체 ({groupCount("partner")})</button>
+        <button type="button" aria-pressed={visibleKinds.government} onClick={() => setVisibleKinds(v=>({...v,government:!v.government}))} className={`btn text-sm ${visibleKinds.government ? "border-blue-600 bg-blue-50 font-semibold" : ""}`}>{visibleKinds.government ? "✓ " : "+ "}관공서 ({groupCount("government")})</button>
       </div>
       {warning && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{warning}</p>}
       {mapProblem && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{mapProblem}</p>}
@@ -232,6 +230,7 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
           </div> : <p className="border-t border-line p-3 text-xs text-muted">목록에서 기록이나 지도 핀을 선택해 자세한 정보를 확인하세요.</p>}
         </div>
       </div>
+      <SalesRoutePlanner entries={rows} positions={locations} onFocus={setSelectedId} />
       <p className="text-xs text-muted">주소가 없거나 검색되지 않은 기록은 지도에 억지로 표시하지 않습니다. 관공서의 관할 지역만 있고 상세 주소가 없으면 핀을 표시하지 않습니다. 위치 확인 결과는 직원의 브라우저 세션에만 보관됩니다.</p>
     </div>
   );
