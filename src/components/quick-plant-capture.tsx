@@ -50,7 +50,7 @@ export function QuickPlantCapture() {
       if(!data.candidates?.length)setMessage("검색된 사진이 없습니다. 정확한 학명이나 품종명을 입력하고 다시 찾아보세요.");
     }catch(e){setError(e instanceof Error?e.message:"검색 실패");}finally{setSearching(false);}
   };
-  const useCandidate=async(candidate:Candidate)=>{
+  const chooseCandidate=async(candidate:Candidate)=>{
     if(!item||!candidate.canImport)return;
     if(!window.confirm("실제 등록할 품종과 사진 속 식물이 정확히 일치하는지 확인하셨나요? CC0 사진을 대표사진으로 등록합니다."))return;
     setBusy(true);setError("");setMessage("");
@@ -98,7 +98,7 @@ export function QuickPlantCapture() {
           <p className="mt-2 break-words text-xs font-medium">{p.title}</p>
           <p className="mt-1 text-xs text-muted">{p.license}</p>
           <a className="mt-2 block text-xs underline" href={p.source} target="_blank" rel="noopener noreferrer">원본·라이선스 보기</a>
-          <button type="button" className="btn mt-2 w-full text-xs" disabled={!item||busy||!p.canImport||item.photos.length>=5} onClick={()=>useCandidate(p)}>{!p.canImport?"재사용 확인 필요":"대표사진 채택"}</button>
+          <button type="button" className="btn mt-2 w-full text-xs" disabled={!item||busy||!p.canImport||item.photos.length>=5} onClick={()=>chooseCandidate(p)}>{!p.canImport?"재사용 확인 필요":"대표사진 채택"}</button>
         </article>)}
       </div>
     </div>
