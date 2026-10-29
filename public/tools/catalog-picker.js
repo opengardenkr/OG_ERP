@@ -6,7 +6,7 @@
  const more=document.getElementById('catalog-more');
  const MAX=48;
  let catalog=[],visible=MAX;
- const clean=v=>String(v||'').normalize('NFKC').toLocaleLowerCase('ko').replace(/[\\s\\-_'’"“”·.,/]+/g,'');
+ const clean=v=>String(v||'').normalize('NFKC').toLocaleLowerCase('ko').replace(/\s+/g,'');
  function getSelected(){
    try{return CatalogSelection.recall()}catch(e){status.textContent=e.message;return []}
  }
