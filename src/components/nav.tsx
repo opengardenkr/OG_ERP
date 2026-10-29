@@ -7,6 +7,7 @@ const ITEMS = [
   { href: "/", label: "대시보드" },
   { href: "/calendar", label: "일정" },
   { href: "/proposal", label: "제안서" },
+  { href: "/proposal/genus", label: "속명 제안서" },
   { href: "/quote", label: "견적서" },
   { href: "/catalog", label: "카탈로그 선택" },
   { href: "/catalog/manage", label: "품종 관리" },
@@ -24,7 +25,7 @@ export function Nav() {
         const active =
           item.href === "/"
             ? pathname === "/"
-            : pathname === item.href || (item.href !== "/catalog" && pathname.startsWith(`${item.href}/`));
+            : pathname === item.href || (item.href !== "/catalog" && item.href !== "/proposal" && pathname.startsWith(`${item.href}/`));
 
         return (
           <Link
