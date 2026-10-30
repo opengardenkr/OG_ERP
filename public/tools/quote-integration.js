@@ -19,18 +19,21 @@
     if(!actions)return;
     const box=document.createElement('div');box.style.cssText='padding:12px;border:1px solid #d3ddcf;background:#f5f8f2;margin:12px 0';
     const text=document.createElement('p');text.textContent='선택 품목을 견적서와 제안서에서 함께 사용합니다. 가격은 확인 후 입력해주세요.';
-    const load=document.createElement('button');load.className='mini-btn';load.textContent='카탈로그 선택 품목 불러오기';load.type='button';
+    const load=document.createElement('button');load.className='mini-btn';load.textContent='주문 품목 불러오기';load.type='button';
     const proposal=document.createElement('button');proposal.className='mini-btn';proposal.textContent='현재 품목으로 제안서';proposal.type='button';
     box.append(text,load,proposal);actions.before(box);
     const encoded=new URLSearchParams(location.search).get('og_selection');
     if(encoded){try{CatalogSelection.remember(CatalogSelection.decode(encoded));history.replaceState(null,'',location.pathname);}catch(error){text.textContent=error.message;}}
     load.onclick=()=>{
       try{
-        const items=CatalogSelection.recall();if(!items.length){text.textContent='먼저 카탈로그에서 품목을 선택해주세요.';return;}
+        const items=CatalogSelection.recall();if(!items.length){text.textContent='먼저 주문 화면에서 품목을 골라주세요.';return;}
         const current=window.readForm();
         if(current.items?.some(p=>p.name)&&!confirm('현재 작성 중인 품목을 선택 품목으로 바꿀까요? 고객 정보는 유지됩니다.'))return;
-        window.applyToForm({...current,kind:'plant',items:items.map(p=>({name:p.kname,spec:p.size,qty:p.qty,price:''}))});
-        text.textContent=items.length+'개 품목을 불러왔습니다. 가격을 확인해주세요.';
+        // 주문 화면이 ERP 안에서만 남기는 단가(웹 카탈로그 선택에는 가격이 없다)
+        let prices={};try{prices=JSON.parse(sessionStorage.getItem('og_order_prices_v1')||'{}')||{};}catch{}
+        const priceOf=p=>{const v=prices[p.plantCode+'|'+p.size];return Number.isFinite(v)&&v>0?v:'';};
+        window.applyToForm({...current,kind:'plant',items:items.map(p=>({name:p.kname,spec:p.size,qty:p.qty,price:priceOf(p)}))});
+        text.textContent=items.length+'개 품목을 불러왔습니다. '+(items.some(p=>priceOf(p)!=='')?'단가를 확인해주세요.':'가격을 입력해주세요.');
       }catch(error){text.textContent='불러오기 실패: '+error.message;}
     };
     proposal.onclick=()=>{
