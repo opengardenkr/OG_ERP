@@ -8,7 +8,7 @@ export default auth((req) => {
   if (req.auth) {
     const routes: Record<string, string> = {
       "/tools/proposal.html": "/proposal", "/tools/quote.html": "/quote",
-      "/tools/catalog-bridge.html": "/catalog",
+      "/tools/catalog-bridge.html": "/catalog", "/tools/order.html": "/catalog",
     };
     const destination = routes[req.nextUrl.pathname];
     if (destination && req.nextUrl.searchParams.get("embedded") !== "1") {

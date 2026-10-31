@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>주문 · 오픈가든 ERP</title>
+<style>
+:root{color-scheme:light;--green:#1F4D33;--leaf:#5C8C48;--ink:#111814;--gray:#6b746e;--soft:#F4F6F3;--line:#E4E8E3;--warn:#B4541B;--gold:#9A6510}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;color:var(--ink);background:var(--soft);line-height:1.5;font-size:14px;word-break:keep-all;padding-bottom:calc(128px + env(safe-area-inset-bottom))}
+button,input,select,textarea{font-family:inherit}
+button{cursor:pointer}
+.wrap{max-width:1180px;margin:0 auto;padding:0 14px}
+.top{position:sticky;top:0;z-index:20;background:rgba(244,246,243,.97);border-bottom:1px solid var(--line);padding:10px 0 8px}
+.tools{display:flex;flex-wrap:wrap;gap:8px}
+.tools input[type=search]{flex:1 1 240px;min-width:0;height:40px;border:1px solid #C9D1C4;border-radius:8px;padding:0 12px;font-size:15px;background:#fff}
+.tools select{height:40px;border:1px solid #C9D1C4;border-radius:8px;padding:0 8px;background:#fff;font-size:14px}
+.only{display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:600;background:#fff;border:1px solid #C9D1C4;border-radius:8px;padding:0 10px;height:40px}
+.only input{width:18px;height:18px;accent-color:var(--green)}
+.status{font-size:12.5px;color:var(--gray);margin-top:6px}
+.status.err{color:var(--warn);font-weight:600}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;margin-top:12px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.card.picked{border-color:var(--green);box-shadow:0 0 0 1px var(--green)}
+.c-photo{aspect-ratio:4/3;background:var(--soft);overflow:hidden}
+.c-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.c-photo.none{display:flex;align-items:center;justify-content:center;color:#a3aca5;font-size:12px}
+.c-body{padding:11px 12px 10px;display:flex;flex-direction:column;flex:1}
+.c-top{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.chip{font-size:11.5px;font-weight:700;color:#3f4a3c;border:1px solid #CFD8C7;border-radius:999px;padding:1px 8px}
+.chip.src{background:var(--green);border-color:var(--green);color:#fff}
+.c-name{font-size:16.5px;font-weight:800;margin-top:5px;letter-spacing:-.02em}
+.c-latin{font-size:12px;font-style:italic;color:var(--gray)}
+.opts{margin-top:auto;padding-top:8px}
+.opt{border-top:1px solid var(--line);padding:8px 0 2px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 8px}
+.opt-info{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px;min-width:0}
+.o-spec{font-size:14px;font-weight:700}
+.o-stock{font-size:12px;color:var(--gray)}
+.o-price{font-size:15px;font-weight:800;width:100%}
+.o-price small{font-size:11.5px;font-weight:500;color:var(--gray);margin-left:1px}
+.o-price em{font-style:normal;font-size:11px;font-weight:700;color:var(--gold);margin-left:4px}
+.o-none{font-size:12.5px;color:var(--gray)}
+.qty{display:flex;align-items:center;gap:5px}
+.all{height:30px;padding:0 8px;border:1px solid #C9D1C4;border-radius:7px;background:#fff;font-size:12px;font-weight:700;color:var(--green);white-space:nowrap}
+.all.on,.all:active{background:var(--green);border-color:var(--green);color:#fff}
+.stepper{display:flex;align-items:center;border:1px solid #C9D1C4;border-radius:10px;overflow:hidden;background:#fff}
+.stepper input{width:68px;height:38px;border:0;text-align:center;font-weight:700;font-size:15px;-moz-appearance:textfield;color:var(--ink)}
+.stepper input::-webkit-outer-spin-button,.stepper input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.st-btn{width:38px;height:38px;border:0;background:var(--soft);font-size:20px;color:var(--green)}
+.opt.on .stepper{border-color:var(--green);box-shadow:0 0 0 2px rgba(31,77,51,.12)}
+.opt.on .stepper input{color:var(--green)}
+.o-warn{grid-column:1/-1;font-size:11.5px;color:var(--warn);font-weight:600}
+.more{display:block;width:100%;height:44px;margin:14px 0;border:1px solid #C9D1C4;border-radius:10px;background:#fff;font-weight:700}
+.empty{background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px 16px;text-align:center;color:var(--gray);margin-top:12px}
+.empty button{margin-top:10px;height:38px;padding:0 16px;border-radius:8px;border:1px solid #C9D1C4;background:#fff;font-weight:700}
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:#fff;border-top:1px solid var(--line);box-shadow:0 -6px 20px rgba(17,24,20,.08);padding:9px 0 calc(9px + env(safe-area-inset-bottom))}
+.bar-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.bar-count{font-size:13px;color:var(--gray)}
+.bar-count button{border:0;background:none;color:var(--green);font-weight:700;font-size:12.5px;text-decoration:underline;margin-left:6px}
+.bar-total{font-size:19px;font-weight:800}
+.bar-total small{font-size:12px;font-weight:500;color:var(--gray);margin-left:3px}
+.acts{display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:8px;margin-top:8px}
+.acts button{height:46px;border-radius:10px;font-size:14.5px;font-weight:800;border:1px solid #C9D1C4;background:#fff;color:var(--ink)}
+.acts .primary{background:var(--green);border-color:var(--green);color:#fff}
+.acts button:disabled{background:#E7EBE5;border-color:#E7EBE5;color:#9aa39c}
+.sheet-bg{position:fixed;inset:0;z-index:40;background:rgba(17,24,20,.45);display:none}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;background:#fff;border-radius:16px 16px 0 0;max-height:92vh;overflow:auto;transform:translateY(105%);transition:transform .2s ease;padding:16px 0 calc(16px + env(safe-area-inset-bottom))}
+.open .sheet-bg{display:block}.open .sheet{transform:none}
+.sheet .wrap{max-width:620px}
+.sheet h2{font-size:18px;font-weight:800}
+.sheet .sub{font-size:13px;color:var(--gray);margin-top:3px}
+.sum{margin-top:10px;background:var(--soft);border-radius:10px;padding:8px 12px;font-size:13px;max-height:30vh;overflow:auto;list-style:none}
+.sum li{display:flex;justify-content:space-between;gap:8px;padding:2px 0}
+.sum .tot{border-top:1px solid var(--line);margin-top:5px;padding-top:6px;font-weight:800;font-size:14px}
+.field{margin-top:11px}
+.field label{display:block;font-size:13px;font-weight:700;margin-bottom:4px}
+.field label em{color:var(--warn);font-style:normal}
+.field label small{font-weight:500;color:var(--gray)}
+.field input,.field textarea{width:100%;border:1px solid #C9D1C4;border-radius:8px;padding:10px 11px;font-size:15px;color:var(--ink);background:#fff}
+.field textarea{min-height:68px;resize:vertical}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.check{display:flex;gap:8px;align-items:flex-start;margin-top:11px;font-size:13px}
+.check input{width:18px;height:18px;accent-color:var(--green);flex:none;margin-top:1px}
+.err{color:var(--warn);font-size:13px;font-weight:600;margin-top:9px;min-height:1em}
+.row2{display:flex;gap:8px;margin-top:12px}
+.row2 button,.row2 a{flex:1;height:48px;border-radius:10px;font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;text-decoration:none}
+.ghost{background:#fff;border:1px solid #C9D1C4;color:var(--ink)}
+.send{background:var(--green);border:0;color:#fff}
+.send:disabled{background:#B9C2B5}
+.done{text-align:center;padding:6px 0}
+.done .no{display:inline-block;margin-top:10px;font-size:19px;font-weight:800;color:var(--green);background:var(--soft);border-radius:8px;padding:6px 14px;letter-spacing:.03em}
+.done p{font-size:13.5px;color:#3f4a3c;margin-top:9px}
+.url{margin-top:12px;display:flex;gap:6px}
+.url input{flex:1;min-width:0;border:1px solid #C9D1C4;border-radius:8px;padding:10px;font-size:13.5px;background:var(--soft)}
+.url button{height:44px;padding:0 14px;border-radius:8px;border:0;background:var(--green);color:#fff;font-weight:800}
+.ok{font-size:12.5px;color:var(--green);margin-top:6px;min-height:1em}
+@media(max-width:560px){.acts{grid-template-columns:1fr 1fr}.acts .primary{grid-column:1/-1;grid-row:1}.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap">
+  <div class="tools">
+    <input id="q" type="search" placeholder="품종·학명·규격 검색" aria-label="품종·학명·규격 검색">
+    <select id="src" aria-label="공급처"><option value="">전체 공급처</option><option value="immediate">국내 농장</option><option value="preorder">구근 라인업</option><option value="hoogenraad">호게나르드</option><option value="hbm">HBM</option></select>
+    <select id="basis" aria-label="가격 기준"><option value="base">기본가(도매·해상)</option><option value="air">항공판매가</option><option value="gov">관급가</option><option value="pre">사전예약가</option></select>
+    <label class="only"><input type="checkbox" id="only"> 고른 품목만</label>
+    <label class="only"><input type="checkbox" id="noprice"> 가격 없는 품목도</label>
+  </div>
+  <p class="status" id="status" role="status">카탈로그 불러오는 중…</p>
+</div></div>
+<main class="wrap">
+  <div class="cards" id="list"></div>
+  <div id="empty" hidden></div>
+  <button type="button" class="more" id="more" hidden>더 보기</button>
+</main>
+
+<div class="bar" id="bar"><div class="wrap">
+  <div class="bar-top"><span class="bar-count" id="cnt">고른 품목이 없습니다</span><span class="bar-total" id="tot">₩0<small>VAT 별도</small></span></div>
+  <div class="acts">
+    <button type="button" id="toQuote" disabled>견적서로</button>
+    <button type="button" id="direct" disabled>주문 접수</button>
+    <button type="button" class="primary" id="link" disabled>고객 링크 만들기</button>
+  </div>
+</div></div>
+<div class="sheet-bg" id="bg"></div>
+<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetH"><div class="wrap" id="sheetIn"></div></div>
+
+<script src="/tools/catalog-selection.js"></script>
+<script>
+(function(){
+  'use strict';
+  var GROUPS = { immediate:{label:'국내 농장',unit:'주',step:10}, preorder:{label:'구근 라인업',unit:'구',step:100}, hoogenraad:{label:'호게나르드',unit:'주',step:10}, hbm:{label:'HBM',unit:'구',step:100} };
+  var BASIS = { base:'기본가', air:'항공판매가', gov:'관급가', pre:'사전예약가' };
+  var DRAFT = 'og-order-draft-v1', PAGE = 30;
+  var $ = function(id){ return document.getElementById(id); };
+  var fmt = function(n){ return Number(n).toLocaleString('ko-KR'); };
+  var esc = function(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+  var clean = function(v){ return String(v || '').normalize('NFKC').toLocaleLowerCase('ko').replace(/\s+/g, ''); };
+  var items = [], byKey = {}, visible = PAGE, qty = {}, basis = 'base', loaded = false;
+
+  try { var d = JSON.parse(sessionStorage.getItem(DRAFT) || '{}'); qty = d.qty || {}; basis = BASIS[d.basis] ? d.basis : 'base'; } catch (e) {}
+  $('basis').value = basis;
+  function save(){ try { sessionStorage.setItem(DRAFT, JSON.stringify({ qty: qty, basis: basis })); } catch (e) {} }
+
+  function keyOf(it, size){ return it.group + ':' + it.id + '|' + size; }
+  function priceOf(opt){
+    var p = opt.prices || {}, want = p[basis];
+    if (want > 0) return { price: Math.round(want), fallback: false };
+    if (p.base > 0) return { price: Math.round(p.base), fallback: basis !== 'base' };
+    return { price: null, fallback: false };
+  }
+  function lines(){
+    var out = [];
+    Object.keys(qty).forEach(function(k){
+      var q = qty[k], ref = byKey[k];
+      if (!(q > 0) || !ref) return;
+      var pr = priceOf(ref.opt);
+      if (!pr.price) return;
+      out.push({ key:k, group:ref.it.group, id:ref.it.id, kname:ref.it.kname, sname:ref.it.sname, cat:ref.it.cat || GROUPS[ref.it.group].label,
+        photo:!!ref.it.image, size:ref.opt.size, price:pr.price, stock:ref.opt.stock, qty:q, unit:GROUPS[ref.it.group].unit });
+    });
+    return out;
+  }
+
+  // ── 목록 ──
+  function card(it){
+    var info = GROUPS[it.group];
+    var opts = it.options.map(function(o){
+      var k = keyOf(it, o.size), pr = priceOf(o), q = qty[k] || 0, max = o.stock > 0 ? o.stock : 0;
+      var stock = o.stock > 0 ? '<span class="o-stock">재고 ' + fmt(o.stock) + info.unit + '</span>' : '';
+      var right = pr.price
+        ? '<div class="qty">' + (max ? '<button type="button" class="all' + (q === max ? ' on' : '') + '" data-act="all" aria-label="' + esc(it.kname + ' ' + o.size) + ' 전량">전량</button>' : '')
+          + '<div class="stepper"><button type="button" class="st-btn" data-act="minus" aria-label="빼기">−</button>'
+          + '<input type="number" inputmode="numeric" min="0" step="' + info.step + '" value="' + q + '" aria-label="' + esc(it.kname + ' ' + o.size) + ' 수량(' + info.unit + ')">'
+          + '<button type="button" class="st-btn" data-act="plus" aria-label="더하기">+</button></div></div>'
+        : '<span class="o-none">가격 미등록</span>';
+      return '<div class="opt' + (q > 0 ? ' on' : '') + '" data-key="' + esc(k) + '" data-max="' + max + '" data-step="' + info.step + '" data-unit="' + info.unit + '">'
+        + '<div class="opt-info"><span class="o-spec">' + esc(o.size) + '</span>' + stock
+        + (pr.price ? '<span class="o-price">₩' + fmt(pr.price) + '<small>/' + info.unit + '</small>' + (pr.fallback ? '<em>' + BASIS[basis] + ' 없음 · 기본가</em>' : '') + '</span>' : '')
+        + '</div>' + right + '<div class="o-warn" hidden></div></div>';
+    }).join('');
+    var picked = it.options.some(function(o){ return qty[keyOf(it, o.size)] > 0; });
+    return '<article class="card' + (picked ? ' picked' : '') + '">'
+      + (it.image ? '<div class="c-photo"><img src="' + esc(it.image) + '" alt="' + esc(it.kname) + '" loading="lazy" decoding="async"></div>' : '<div class="c-photo none">사진 없음</div>')
+      + '<div class="c-body"><div class="c-top"><span class="chip src">' + esc(info.label) + '</span>' + (it.cat ? '<span class="chip">' + esc(it.cat) + '</span>' : '') + '</div>'
+      + '<h3 class="c-name">' + esc(it.kname) + '</h3>' + (it.sname ? '<p class="c-latin">' + esc(it.sname) + '</p>' : '')
+      + '<div class="opts">' + opts + '</div></div></article>';
+  }
+  var unpriced = 0;
+  function hasPrice(it){ return it.options.some(function(o){ return priceOf(o).price; }); }
+  function matches(){
+    var text = clean($('q').value), src = $('src').value, only = $('only').checked, all = $('noprice').checked;
+    unpriced = 0;
+    return items.filter(function(it){
+      if (src && it.group !== src) return false;
+      if (!all && !hasPrice(it)) { unpriced++; return false; }
+      if (only && !it.options.some(function(o){ return qty[keyOf(it, o.size)] > 0; })) return false;
+      if (!text) return true;
+      return clean([it.kname, it.sname, it.cat, it.sku, GROUPS[it.group].label, it.options.map(function(o){ return o.size; }).join(' ')].join(' ')).indexOf(text) >= 0;
+    });
+  }
+  function render(){
+    if (!loaded) return;
+    var list = matches(), shown = list.slice(0, visible);
+    $('list').innerHTML = shown.map(card).join('');
+    $('more').hidden = list.length <= visible;
+    $('more').textContent = '다음 ' + Math.min(PAGE, list.length - visible) + '개 보기';
+    var empty = $('empty');
+    if (!list.length) { empty.hidden = false; empty.className = 'empty'; empty.textContent = $('only').checked ? '고른 품목이 없습니다.' : '검색 결과가 없습니다.'; }
+    else empty.hidden = true;
+    var st = $('status'); st.className = 'status';
+    st.textContent = list.length + '개 품종 · ' + Math.min(list.length, visible) + '개 표시 · 가격 기준 ' + BASIS[basis] + (unpriced ? ' · 이 기준에 가격 없는 ' + unpriced + '개 숨김' : '');
+  }
+
+  function setQty(row, q){
+    var k = row.dataset.key, max = parseInt(row.dataset.max, 10) || 0, w = row.querySelector('.o-warn');
+    q = Math.max(0, Math.round(q) || 0);
+    if (max && q > max) { q = max; w.textContent = '재고 ' + fmt(max) + row.dataset.unit + '까지 가능합니다'; w.hidden = false; } else w.hidden = true;
+    if (q > 0) qty[k] = q; else delete qty[k];
+    row.querySelector('input').value = q;
+    row.classList.toggle('on', q > 0);
+    var a = row.querySelector('.all'); if (a) a.classList.toggle('on', !!max && q === max);
+    var c = row.closest('.card'); if (c) c.classList.toggle('picked', !!c.querySelector('.opt.on'));
+    save(); updateBar();
+  }
+  $('list').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-act]'); if (!b) return;
+    var row = b.closest('.opt'), step = parseInt(row.dataset.step, 10) || 1, cur = qty[row.dataset.key] || 0;
+    if (b.dataset.act === 'plus') setQty(row, cur + step);
+    else if (b.dataset.act === 'minus') setQty(row, cur - step);
+    else setQty(row, parseInt(row.dataset.max, 10));
+  });
+  $('list').addEventListener('change', function(e){ if (e.target.matches('.stepper input')) setQty(e.target.closest('.opt'), parseInt(e.target.value, 10)); });
+  $('list').addEventListener('focusin', function(e){ if (e.target.matches('.stepper input') && e.target.value === '0') e.target.select(); });
+  $('q').addEventListener('input', function(){ visible = PAGE; render(); });
+  $('src').addEventListener('change', function(){ visible = PAGE; render(); });
+  $('only').addEventListener('change', function(){ visible = PAGE; render(); });
+  $('noprice').addEventListener('change', function(){ visible = PAGE; render(); });
+  $('basis').addEventListener('change', function(){ basis = $('basis').value; save(); render(); updateBar(); });
+  $('more').addEventListener('click', function(){ visible += PAGE; render(); });
+
+  function updateBar(){
+    var ls = lines(), total = ls.reduce(function(s, l){ return s + l.price * l.qty; }, 0);
+    $('cnt').innerHTML = ls.length ? '고른 규격 ' + ls.length + '개 <button type="button" id="clear">비우기</button>' : '고른 품목이 없습니다';
+    $('tot').innerHTML = '₩' + fmt(total) + '<small>VAT 별도</small>';
+    $('toQuote').disabled = $('direct').disabled = $('link').disabled = !ls.length;
+    var c = $('clear'); if (c) c.addEventListener('click', function(){ if (confirm('고른 품목을 모두 비울까요?')) { qty = {}; save(); render(); updateBar(); } });
+    return { lines: ls, total: total };
+  }
+
+  // ── 아래 창 ──
+  function openSheet(html){ $('sheetIn').innerHTML = html; document.body.classList.add('open'); }
+  function closeSheet(){ document.body.classList.remove('open'); }
+  $('bg').addEventListener('click', closeSheet);
+  $('sheetIn').addEventListener('click', function(e){ if (e.target.closest('[data-close]')) closeSheet(); });
+  function summary(st, withTotal){
+    return '<ul class="sum">' + st.lines.map(function(l){
+      return '<li><span>' + esc(l.kname + ' ' + l.size) + (withTotal ? ' × ' + fmt(l.qty) + l.unit : '') + '</span><span>' + (withTotal ? '₩' + fmt(l.price * l.qty) : '₩' + fmt(l.price) + '/' + l.unit) + '</span></li>';
+    }).join('') + (withTotal ? '<li class="tot"><span>합계 (VAT 별도)</span><span>₩' + fmt(st.total) + '</span></li>' : '') + '</ul>';
+  }
+  function today(){ var d = new Date(Date.now() + 9 * 3600000); return d.toISOString().slice(0, 10); }
+  function post(url, body){
+    return fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (!r.ok) throw new Error(j.error || '저장하지 못했습니다.'); return j; }); });
+  }
+  function wire(submit){
+    var form = $('sheetForm');
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var btn = $('sheetSend'), err = $('sheetErr'), label = btn.textContent;
+      btn.disabled = true; btn.textContent = '저장하는 중…'; err.textContent = '';
+      submit().catch(function(x){ err.textContent = x.message || '저장하지 못했습니다.'; btn.disabled = false; btn.textContent = label; });
+    });
+  }
+  function payload(l){ return { group:l.group, id:l.id, kname:l.kname, sname:l.sname, cat:l.cat, photo:l.photo, size:l.size, price:l.price, stock:l.stock, qty:l.qty }; }
+  function copy(text, msg){
+    var done = function(){ $(msg).textContent = '복사했습니다.'; };
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function(){ prompt('아래 내용을 복사하세요', text); });
+    else prompt('아래 내용을 복사하세요', text);
+  }
+
+  $('link').addEventListener('click', function(){
+    var st = updateBar(); if (!st.lines.length) return;
+    openSheet('<h2 id="sheetH">고객 주문 링크 만들기</h2><p class="sub">고른 ' + st.lines.length + '개 규격으로 고객용 주문서를 만듭니다. 고객이 수량을 넣어 보내면 견적요청으로 들어옵니다.</p>'
+      + summary(st, false)
+      + '<form id="sheetForm" novalidate>'
+      + '<div class="two"><div class="field"><label for="lCust">거래처명 <small>넣으면 ○○ 전용 · 자동 입력</small></label><input id="lCust" maxlength="60" placeholder="예: 유니크가든"></div>'
+      + '<div class="field"><label for="lPhone">연락처 <small>자동 입력용</small></label><input id="lPhone" type="tel" inputmode="tel" maxlength="30" placeholder="010-0000-0000"></div></div>'
+      + '<div class="field"><label for="lTitle">제목</label><input id="lTitle" maxlength="60" placeholder="오픈가든 주문서"></div>'
+      + '<div class="two"><div class="field"><label for="lMin">최소 주문 금액 <small>원 · 없으면 비움</small></label><input id="lMin" inputmode="numeric" placeholder="예: 1000000"></div>'
+      + '<div class="field"><label for="lDate">재고 기준일</label><input id="lDate" type="date" value="' + today() + '"></div></div>'
+      + '<div class="field"><label for="lMemo">안내 문구 <small>한 줄에 하나 · **굵게**</small></label><textarea id="lMemo" maxlength="1000" placeholder="예: 운송비 별도&#10;**재고 소진 시 조기 마감**"></textarea></div>'
+      + '<label class="check"><input type="checkbox" id="lPre"><span>입력한 수량을 고객 화면에 미리 채우기 <small style="color:var(--gray)">(고객이 고칠 수 있음)</small></span></label>'
+      + '<p class="err" id="sheetErr" role="alert"></p>'
+      + '<div class="row2"><button type="button" class="ghost" data-close>닫기</button><button type="submit" class="send" id="sheetSend">링크 만들기</button></div></form>');
+    $('lCust').addEventListener('input', function(){ $('lTitle').placeholder = $('lCust').value.trim() ? $('lCust').value.trim() + ' 주문서' : '오픈가든 주문서'; });
+    wire(function(){
+      var cust = $('lCust').value.trim();
+      return post('/api/order/links', {
+        title: $('lTitle').value.trim() || (cust ? cust + ' 주문서' : '오픈가든 주문서'), customer: cust, phone: $('lPhone').value.trim(),
+        minOrder: parseInt(($('lMin').value || '').replace(/\D/g, ''), 10) || 0, basisDate: $('lDate').value, memo: $('lMemo').value,
+        prefill: $('lPre').checked, lines: st.lines.map(payload),
+      }).then(function(j){
+        openSheet('<div class="done"><h2 id="sheetH">주문 링크가 만들어졌습니다</h2><p>아래 링크를 고객 카톡방에 보내세요. 고객이 수량을 넣어 보내면 카톡 알림과 함께 견적요청에 쌓입니다.</p>'
+          + '<div class="url"><input id="lUrl" readonly value="' + esc(j.url) + '"><button type="button" id="lCopy">복사</button></div><p class="ok" id="lOk"></p>'
+          + '<div class="row2"><a class="ghost" href="' + esc(j.url) + '" target="_blank" rel="noopener">미리보기</a><button type="button" class="send" data-close>닫기</button></div>'
+          + '<p style="font-size:12px;color:var(--gray)">링크를 닫으려면 에어테이블 [영업] 주문 링크에서 상태를 \'마감\'으로 바꾸세요.</p></div>');
+        $('lCopy').addEventListener('click', function(){ copy(j.url, 'lOk'); });
+        $('lUrl').addEventListener('focus', function(){ this.select(); });
+      });
+    });
+  });
+
+  $('direct').addEventListener('click', function(){
+    var st = updateBar(); if (!st.lines.length) return;
+    openSheet('<h2 id="sheetH">주문 접수</h2><p class="sub">전화·카톡으로 받은 주문을 바로 기록합니다. 견적요청에 쌓이고 카톡 알림이 갑니다.</p>'
+      + summary(st, true)
+      + '<form id="sheetForm" novalidate>'
+      + '<div class="two"><div class="field"><label for="dCust">거래처명 <em>*</em></label><input id="dCust" maxlength="100" required></div>'
+      + '<div class="field"><label for="dPhone">연락처</label><input id="dPhone" type="tel" inputmode="tel" maxlength="30" placeholder="010-0000-0000"></div></div>'
+      + '<div class="field"><label for="dMemo">메모</label><textarea id="dMemo" maxlength="800" placeholder="납품지, 희망 일정 등"></textarea></div>'
+      + '<p class="err" id="sheetErr" role="alert"></p>'
+      + '<div class="row2"><button type="button" class="ghost" data-close>닫기</button><button type="submit" class="send" id="sheetSend">접수하기</button></div></form>');
+    wire(function(){
+      if (!$('dCust').value.trim()) return Promise.reject(new Error('거래처명을 입력해 주세요.'));
+      return post('/api/order/direct', { customer: $('dCust').value.trim(), phone: $('dPhone').value.trim(), memo: $('dMemo').value, lines: st.lines.map(payload) })
+        .then(function(j){
+          openSheet('<div class="done"><h2 id="sheetH">주문이 접수되었습니다</h2><div class="no"></div><p>합계 ₩' + fmt(j.total) + ' (VAT 별도) · 견적요청에 기록했습니다.</p>'
+            + '<div class="row2"><button type="button" class="ghost" id="dNew">새 주문</button><button type="button" class="send" id="dQuote">견적서로 불러오기</button></div><p class="err" id="sheetErr"></p></div>');
+          $('sheetIn').querySelector('.no').textContent = j.requestNo;
+          $('dNew').addEventListener('click', function(){ qty = {}; save(); render(); updateBar(); closeSheet(); });
+          $('dQuote').addEventListener('click', function(){ toQuote($('sheetErr')); });
+        });
+    });
+  });
+
+  // 견적서 생성기로: 품목·규격·수량은 기존 선택 목록으로, 단가는 ERP 안에서만 쓰는 별도 칸으로 넘긴다
+  function toQuote(errEl){
+    var ls = lines();
+    if (ls.length > 20) { errEl.textContent = '견적서에는 한 번에 20개 규격까지 불러올 수 있습니다. 나눠서 불러오세요.'; return; }
+    try {
+      CatalogSelection.remember(ls.map(function(l){ return { kname:l.kname, sname:l.sname, size:l.size, qty:l.qty, plantCode:l.id, image:'' }; }));
+      var prices = {}; ls.forEach(function(l){ prices[l.id + '|' + l.size] = l.price; });
+      sessionStorage.setItem('og_order_prices_v1', JSON.stringify(prices));
+      window.top.location.href = '/quote';
+    } catch (e) { errEl.textContent = e.message; }
+  }
+  $('toQuote').addEventListener('click', function(){
+    var st = updateBar(); if (!st.lines.length) return;
+    openSheet('<h2 id="sheetH">견적서로 불러오기</h2><p class="sub">고른 품목·수량·단가를 견적서 생성기로 넘깁니다. 견적서에서 [주문 품목 불러오기]를 누르세요.</p>' + summary(st, true)
+      + '<p class="err" id="sheetErr" role="alert"></p><div class="row2"><button type="button" class="ghost" data-close>닫기</button><button type="button" class="send" id="qGo">견적서 열기</button></div>');
+    $('qGo').addEventListener('click', function(){ toQuote($('sheetErr')); });
+  });
+
+  // 웹 카탈로그에서 넘어온 선택(og_selection)은 수량으로 받아 둔다
+  function importSelection(){
+    try {
+      var encoded = new URLSearchParams(location.search).get('og_selection');
+      if (!encoded) return;
+      CatalogSelection.decode(encoded).forEach(function(p){
+        var size = String(p.size || '').replace(/\s*규격$/, '');
+        items.forEach(function(it){
+          if (it.id !== p.plantCode) return;
+          it.options.forEach(function(o){ if (o.size === size) qty[keyOf(it, o.size)] = p.qty; });
+        });
+      });
+      save(); history.replaceState(null, '', location.pathname + (location.search.indexOf('embedded=1') >= 0 ? '?embedded=1' : ''));
+    } catch (e) {}
+  }
+
+  function load(){
+    var st = $('status'); st.className = 'status'; st.textContent = '카탈로그 불러오는 중…';
+    fetch('/api/order/catalog', { cache:'no-store' })
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (!r.ok) throw new Error(j.error || '카탈로그를 불러오지 못했습니다.'); return j; }); })
+      .then(function(j){
+        items = j.items || []; byKey = {};
+        items.forEach(function(it){ it.options.forEach(function(o){ byKey[keyOf(it, o.size)] = { it: it, opt: o }; }); });
+        loaded = true; importSelection(); render(); updateBar();
+        if (!items.length) { $('empty').hidden = false; $('empty').className = 'empty'; $('empty').textContent = '카탈로그에 품목이 없습니다.'; }
+      })
+      .catch(function(e){
+        st.className = 'status err'; st.textContent = e.message;
+        var em = $('empty'); em.hidden = false; em.className = 'empty'; em.innerHTML = esc(e.message) + '<br><button type="button" id="retry">다시 시도</button>';
+        $('retry').addEventListener('click', load);
+      });
+  }
+  updateBar();
+  load();
+})();
+</script>
+</body></html>

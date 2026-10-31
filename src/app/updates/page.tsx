@@ -38,9 +38,9 @@ export default function UpdatesPage() {
         <Link className="btn" href="/sales-map">영업 지도 보기 →</Link>
         <Link className="btn" href="/programs">프로그램 보기 →</Link>
         <a className="btn" href="/tools/proposal.html" target="_blank" rel="noopener noreferrer">제안서 열기 ↗</a>
-        <a className="btn" href="/tools/catalog-bridge.html" target="_blank" rel="noopener noreferrer">카탈로그 선택 품목 ↗</a>
+        <Link className="btn" href="/catalog">주문 →</Link>
       </div>
-      <p className="mt-4 text-xs text-muted">사진 카탈로그·워터마크·검색 노출 개선은 별도 웹사이트 작업입니다. ERP의 업데이트 확인 버튼은 새로 배포된 버전을 확인하며, 별도 웹사이트 기능을 설치하지 않습니다. 카탈로그 선택 품목 화면은 카탈로그에서 전달한 품목이 있을 때 목록을 표시합니다.</p>
+      <p className="mt-4 text-xs text-muted">사진 카탈로그·워터마크·검색 노출 개선은 별도 웹사이트 작업입니다. ERP의 업데이트 확인 버튼은 새로 배포된 버전을 확인하며, 별도 웹사이트 기능을 설치하지 않습니다. 주문 화면에서 품목·수량을 골라 고객 주문 링크를 만들거나 바로 접수합니다.</p>
     </AppShell>
   );
 }
