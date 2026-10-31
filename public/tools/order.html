@@ -323,33 +323,40 @@ button{cursor:pointer}
       + '<div class="row2"><button type="button" class="ghost" data-close>닫기</button><button type="submit" class="send" id="sheetSend">접수하기</button></div></form>');
     wire(function(){
       if (!$('dCust').value.trim()) return Promise.reject(new Error('거래처명을 입력해 주세요.'));
-      return post('/api/order/direct', { customer: $('dCust').value.trim(), phone: $('dPhone').value.trim(), memo: $('dMemo').value, lines: st.lines.map(payload) })
+      var client = { company: $('dCust').value.trim(), phone: $('dPhone').value.trim(), remarks: $('dMemo').value.trim() };
+      return post('/api/order/direct', { customer: client.company, phone: client.phone, memo: $('dMemo').value, lines: st.lines.map(payload) })
         .then(function(j){
           openSheet('<div class="done"><h2 id="sheetH">주문이 접수되었습니다</h2><div class="no"></div><p>합계 ₩' + fmt(j.total) + ' (VAT 별도) · 견적요청에 기록했습니다.</p>'
             + '<div class="row2"><button type="button" class="ghost" id="dNew">새 주문</button><button type="button" class="send" id="dQuote">견적서로 불러오기</button></div><p class="err" id="sheetErr"></p></div>');
           $('sheetIn').querySelector('.no').textContent = j.requestNo;
           $('dNew').addEventListener('click', function(){ qty = {}; save(); render(); updateBar(); closeSheet(); });
-          $('dQuote').addEventListener('click', function(){ toQuote($('sheetErr')); });
+          $('dQuote').addEventListener('click', function(){ toQuote($('sheetErr'), client); });
         });
     });
   });
 
-  // 견적서 생성기로: 품목·규격·수량은 기존 선택 목록으로, 단가는 ERP 안에서만 쓰는 별도 칸으로 넘긴다
-  function toQuote(errEl){
+  // 견적서로 넘기기: 견적서가 열리면 새 견적으로 비우고 이 품목·수량·단가(+받는 분)를 바로 채운다.
+  // 받는 쪽은 quote-integration.js. 단가는 ERP 안(같은 탭의 sessionStorage)에서만 오간다.
+  function toQuote(errEl, client){
     var ls = lines();
-    if (ls.length > 20) { errEl.textContent = '견적서에는 한 번에 20개 규격까지 불러올 수 있습니다. 나눠서 불러오세요.'; return; }
+    if (!ls.length) return;
     try {
-      CatalogSelection.remember(ls.map(function(l){ return { kname:l.kname, sname:l.sname, size:l.size, qty:l.qty, plantCode:l.id, image:'' }; }));
+      sessionStorage.setItem('og_order_handoff_v1', JSON.stringify({ at: Date.now(), client: client || {},
+        items: ls.map(function(l){ return { name:l.kname, spec:l.size, qty:l.qty, price:l.price }; }) }));
+      // [현재 품목으로 제안서]가 사진·학명을 찾는 기존 선택 목록(20개까지)과 수동 [주문 품목 불러오기]용 단가
+      if (ls.length <= 20) CatalogSelection.remember(ls.map(function(l){ return { kname:l.kname, sname:l.sname, size:l.size, qty:l.qty, plantCode:l.id, image:'' }; }));
       var prices = {}; ls.forEach(function(l){ prices[l.id + '|' + l.size] = l.price; });
       sessionStorage.setItem('og_order_prices_v1', JSON.stringify(prices));
       window.top.location.href = '/quote';
-    } catch (e) { errEl.textContent = e.message; }
+    } catch (e) { errEl.textContent = e.message || '견적서로 넘기지 못했습니다.'; }
   }
   $('toQuote').addEventListener('click', function(){
     var st = updateBar(); if (!st.lines.length) return;
-    openSheet('<h2 id="sheetH">견적서로 불러오기</h2><p class="sub">고른 품목·수량·단가를 견적서 생성기로 넘깁니다. 견적서에서 [주문 품목 불러오기]를 누르세요.</p>' + summary(st, true)
+    openSheet('<h2 id="sheetH">견적서로 넘기기</h2><p class="sub">견적서가 <b>새 견적</b>으로 열리고 아래 품목·수량·단가가 바로 들어갑니다. 작성 중이던 견적 내용은 비워집니다.</p>' + summary(st, true)
+      + '<div class="two"><div class="field"><label for="qCust">받는 분(업체명) <small>선택</small></label><input id="qCust" maxlength="100"></div>'
+      + '<div class="field"><label for="qPhone">연락처 <small>선택</small></label><input id="qPhone" type="tel" inputmode="tel" maxlength="30"></div></div>'
       + '<p class="err" id="sheetErr" role="alert"></p><div class="row2"><button type="button" class="ghost" data-close>닫기</button><button type="button" class="send" id="qGo">견적서 열기</button></div>');
-    $('qGo').addEventListener('click', function(){ toQuote($('sheetErr')); });
+    $('qGo').addEventListener('click', function(){ toQuote($('sheetErr'), { company: $('qCust').value.trim(), phone: $('qPhone').value.trim() }); });
   });
 
   // 웹 카탈로그에서 넘어온 선택(og_selection)은 수량으로 받아 둔다
