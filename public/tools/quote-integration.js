@@ -22,6 +22,22 @@
     const load=document.createElement('button');load.className='mini-btn';load.textContent='주문 품목 불러오기';load.type='button';
     const proposal=document.createElement('button');proposal.className='mini-btn';proposal.textContent='현재 품목으로 제안서';proposal.type='button';
     box.append(text,load,proposal);actions.before(box);
+    // 주문 화면 [견적서로]: 새 견적으로 비우고 고른 품목·수량·단가를 바로 채운다(10분 안에 넘긴 것만, 한 번만)
+    let handoff=null;try{handoff=JSON.parse(sessionStorage.getItem('og_order_handoff_v1')||'null');}catch{}
+    if(handoff){
+      sessionStorage.removeItem('og_order_handoff_v1');
+      const fresh=Array.isArray(handoff.items)&&handoff.items.length>0&&Date.now()-Number(handoff.at)<600000;
+      if(fresh)try{
+        const c=handoff.client||{},cur=window.readForm(),num=v=>Number.isFinite(Number(v))&&Number(v)>0?Number(v):'';
+        if(typeof window.switchMainTab==='function')window.switchMainTab('write');
+        window.applyToForm({kind:'plant',bank:cur.bank,remarks:String(c.remarks||''),
+          client:{company:String(c.company||''),name:'',phone:String(c.phone||''),businessNo:'',address:'',businessType:'',businessItem:''},
+          items:handoff.items.slice(0,200).map(p=>({name:String(p.name||''),spec:String(p.spec||''),qty:num(p.qty),price:num(p.price)}))});
+        text.textContent='주문 화면에서 '+handoff.items.length+'개 품목을 새 견적으로 불러왔습니다. 단가와 받는 분을 확인해주세요.';
+        box.style.borderColor='#1f4d33';box.style.background='#eef5ea';
+        document.getElementById('itemBody')?.scrollIntoView({block:'center'});
+      }catch(error){text.textContent='주문 품목을 불러오지 못했습니다: '+error.message;}
+    }
     const encoded=new URLSearchParams(location.search).get('og_selection');
     if(encoded){try{CatalogSelection.remember(CatalogSelection.decode(encoded));history.replaceState(null,'',location.pathname);}catch(error){text.textContent=error.message;}}
     load.onclick=()=>{

@@ -388,6 +388,12 @@ HANDOFF.md보다 이 파일이 최신이다.
 - 규칙은 `src/lib/order.ts`(순수, 테스트 있음), Airtable은 `src/lib/airtable/order.ts`. 카탈로그는 성공만 5분 캐시.
 - 링크 마감은 아직 Airtable에서 상태를 '마감'으로 바꾼다(포털 화면은 다음 단계).
 
+2026-10-31
+- 주문 → [견적서로]가 견적서를 **새 견적으로 비우고 고른 품목·수량·단가를 바로 채운다**(버튼을 따로 누르지 않는다).
+  넘김은 같은 탭의 sessionStorage `og_order_handoff_v1` 한 번(10분 안)만 쓰고 지운다 — 새로고침해도 다시 덮지 않는다.
+  받는 쪽은 `quote-integration.js`(Vite 산출물 `quote.html`은 그대로, 노출된 `readForm`·`applyToForm`만 쓴다).
+  받는 분(업체명·연락처)은 선택 입력, [주문 접수] 뒤 [견적서로 불러오기]는 거래처·연락처·메모까지 채운다.
+
 2026-10-29
 - **속명 제안서** `/proposal/genus` 추가. 속명(호게나르드 DM `세부분류`)을 고르면 재고 있는
   규격만 모아 3×2 카드 A4 제안서를 그린다. 인쇄용은 `/proposal/genus/print` → [PDF로 저장].
