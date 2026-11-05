@@ -118,6 +118,7 @@ AUTH_GOOGLE_SECRET
 AUTH_URL              # 로컬만. Vercel에서는 생략
 ALLOWED_HD=open-garden.co.kr
 GOOGLE_CALENDAR_ID    # 쉼표로 여러 개. 맨 앞이 기본 캘린더
+NAVER_MAPS_CLIENT_ID  # 영업 지도. 네이버 Maps Client ID(비밀 아님). NAVER_MAP_KEY_ID도 받는다
 ```
 
 `.env.example`에는 위 이름만 둔다. `.env*`는 `.gitignore`에 넣는다.
@@ -376,6 +377,12 @@ Airtable로 간다. 2인·소량 데이터에 별도 DB는 과하다.
 ## 12. 변경 기록
 
 HANDOFF.md보다 이 파일이 최신이다.
+
+2026-11-05
+- 탭 아이콘을 로고 마크(흰색, 초록 `brand-600` 바탕)로 교체. `favicon.ico`·`icon.png`·`apple-icon.png`.
+  로그인 화면에서도 보이도록 `proxy.ts`가 세 파일을 막지 않는다. (검정 마크는 어두운 탭에서 안 보여 버렸다)
+- 영업 지도 네이버 키를 관공서 지도와 같은 이름(`NAVER_MAP_KEY_ID`)으로도 받는다.
+  지도가 뜨려면 네이버 콘솔 Web 서비스 URL에 `https://app.open-garden.co.kr`이 있어야 한다.
 
 2026-10-30
 - 메뉴 '카탈로그 선택' → **'주문'**(`/catalog`, `public/tools/order.html`). 고객 카톡방용 주문형 제안서와 같은

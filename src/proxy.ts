@@ -30,7 +30,7 @@ export const config = {
     //   api/auth  로그인 처리 자체
     //   login     로그인 화면
     //   _next     프레임워크 자산
-    //   favicon
-    "/((?!api/auth|login|_next/static|_next/image|favicon.ico).*)",
+    //   favicon·탭 아이콘 (로그인 화면에서도 보여야 한다)
+    "/((?!api/auth|login|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png).*)",
   ],
 };
