@@ -83,3 +83,20 @@ test('공동수입 링크(src)는 items 없이도 읽고, ERP가 품목을 쓰�
   assert.equal(refreshStock(p, new Map()).src, 'hg-pool');
   assert.equal(parsePayload(JSON.stringify({ v: 1 })), null);
 });
+
+test('주문 변경: 수량 0은 빼고, 이름 없는 줄은 거절, 요약은 바뀐 것만', async () => {
+  const { readEditLines, nextRevisionNo, quoteTotals, changeSummary } = await import('../src/lib/order-program.ts');
+  const r = readEditLines([{ name: '세일러맨', spec: '12/14', qty: 2700, price: 500 }, { name: '타히티', spec: '16/18', qty: 0, price: 1200 }, { name: '', spec: '', qty: 0, price: 0 }]);
+  assert.deepEqual(r, { ok: true, lines: [{ name: '세일러맨', spec: '12/14', qty: 2700, price: 500 }] });
+  assert.equal(readEditLines([{ name: '', qty: 3, price: 1 }]).ok, false);
+  assert.equal(readEditLines([{ name: 'a', qty: 1.5, price: 1 }]).ok, false);
+  assert.equal(readEditLines([{ name: 'a', qty: 0, price: 1 }]).ok, false);
+  assert.deepEqual(nextRevisionNo(['OG-1-001', 'OG-1-001-R2', 'OG-1-001-R5', 'OG-1-0011-R9'], 'OG-1-001'), { number: 'OG-1-001-R6', revision: 6 });
+  assert.deepEqual(nextRevisionNo(['OG-1-001'], 'OG-1-001'), { number: 'OG-1-001-R2', revision: 2 });
+  assert.deepEqual(quoteTotals([{ name: 'a', spec: '', qty: 10, price: 1000 }], '과세'), { count: 1, qty: 10, supply: 10000, vat: 1000, total: 11000 });
+  assert.equal(quoteTotals([{ name: 'a', spec: '', qty: 10, price: 1000 }], '면세').vat, 0);
+  const before = [{ name: '세일러맨', spec: '12/14', qty: 2100, price: 500 }, { name: '타히티', spec: '16/18', qty: 875, price: 1200 }];
+  const after = [{ name: '세일러맨', spec: '12/14', qty: 2700, price: 500 }, { name: '뉴욕', spec: '10/+', qty: 1000, price: 600 }];
+  assert.equal(changeSummary(before, after), '세일러맨 2,100→2,700, +뉴욕 10/+ 1,000, −타히티 16/18');
+  assert.equal(changeSummary(before, before), '내용 그대로');
+});

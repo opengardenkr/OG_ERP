@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  deductStockAction, linkStatusAction, mergeOrdersAction, programStatusAction, refreshStockAction,
+  deductStockAction, deleteProgramAction, linkStatusAction, mergeOrdersAction, programStatusAction, refreshStockAction,
 } from "@/app/order-actions";
 import { AppShell, Section } from "@/components/app-shell";
 import { EmptyState, ErrorState } from "@/components/data-state";
-import { ActionButton, CopyLink, DeployForm } from "@/components/order-program-actions";
+import { ActionButton, CopyLink, DeployForm, OrderEditor } from "@/components/order-program-actions";
 import { OrderTabs } from "@/components/order-tabs";
 import { getClients } from "@/lib/airtable/clients";
 import { getProgram, type LinkDetail } from "@/lib/airtable/order-programs";
@@ -24,6 +24,8 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (!result.ok) return <AppShell title="주문서"><ErrorState message={result.message} /></AppShell>;
   const p = result.data!;
   const clientOptions = clients.ok ? clients.data.map((c) => ({ name: c.name, phone: c.phone })) : [];
+  // 주문 내용 고치기에서 고를 수 있는 줄 — 링크 주문이 견적에 들어가는 이름(분류 이름)과 같게
+  const options = p.items.flatMap((it) => it.rows.map((r) => ({ name: `${it.grp} ${it.name}`.trim(), spec: r.size, price: r.price })));
 
   return (
     <AppShell
@@ -36,6 +38,12 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         {p.editable ? <Link href={`/catalog/pick?program=${p.id}`} className="btn-primary px-2.5 text-xs">품목·가격 고치기</Link> : null}
         {p.editable ? <ActionButton action={refreshStockAction} fields={{ program: p.id }} label="재고 반영" /> : null}
         <ActionButton action={programStatusAction} fields={{ program: p.id, status: p.status === "보관" ? "사용" : "보관" }} label={p.status === "보관" ? "다시 꺼내기" : "보관"} />
+        {p.status === "보관" ? (
+          <ActionButton
+            action={deleteProgramAction} fields={{ program: p.id }} label="삭제"
+            confirm={`'${p.name}' 주문서를 지웁니다. 되살릴 수 없습니다.\n배포한 링크 ${p.links.length}개는 닫힙니다(마감). 받은 주문·견적은 그대로 남습니다.\n지울까요?`}
+          />
+        ) : null}
       </div>
       {p.memo ? <p className="card mb-3 whitespace-pre-wrap p-3 text-xs text-muted">{p.memo.replace(/\*\*/g, "")}</p> : null}
       {p.source === "hg-pool" ? (
@@ -46,7 +54,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
       <Section title={`배포한 회사 ${p.links.length}곳`}>
         <DeployForm programId={p.id} programName={p.name} clients={clientOptions} />
-        {p.links.length ? <ul className="mt-2 space-y-2">{p.links.map((l) => <LinkCard key={l.recId} l={l} />)}</ul>
+        {p.links.length ? <ul className="mt-2 space-y-2">{p.links.map((l) => <LinkCard key={l.recId} l={l} options={options} />)}</ul>
           : <p className="mt-2 text-sm text-muted">아직 배포한 회사가 없습니다. 위에서 회사 이름을 넣고 [링크 만들기]를 누르세요.</p>}
       </Section>
 
@@ -82,7 +90,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   );
 }
 
-function LinkCard({ l }: { l: LinkDetail }) {
+function LinkCard({ l, options }: { l: LinkDetail; options: { name: string; spec: string; price: number }[] }) {
   const closed = l.status === "마감";
   return (
     <li className={`card p-3 text-sm ${closed ? "opacity-60" : ""}`}>
@@ -124,7 +132,7 @@ function LinkCard({ l }: { l: LinkDetail }) {
           ) : <span />}
           <div className="flex flex-wrap items-start gap-1.5">
             {l.orders.length ? (
-              <ActionButton action={mergeOrdersAction} fields={{ link: l.recId }} label={l.quote ? "새 주문까지 다시 합치기" : "합산 견적서 만들기"} primary={!l.quote} />
+              <ActionButton action={mergeOrdersAction} fields={{ link: l.recId }} label={l.quote ? "새 주문 견적에 더하기" : "합산 견적서 만들기"} primary={!l.quote} />
             ) : null}
             {l.quote?.canDeduct ? (
               <ActionButton
@@ -134,8 +142,14 @@ function LinkCard({ l }: { l: LinkDetail }) {
             ) : null}
           </div>
         </div>
+        {l.quote?.canEdit ? <div className="mt-2 flex justify-end"><OrderEditor link={l.recId} lines={l.quote.lines} options={options} sent={l.quote.status !== "작성"} /></div> : null}
+        {l.quote?.changes.length ? (
+          <ul className="mt-2 space-y-0.5 border-t border-line pt-1.5 text-[11px] text-muted">
+            {l.quote.changes.map((c) => <li key={c}>{c}</li>)}
+          </ul>
+        ) : null}
         {l.quote && !l.quote.canDeduct && !l.quote.deducted ? (
-          <p className="mt-1 text-[11px] text-faint">견적서에서 수주확정하면 [재고 차감]이 나타납니다.</p>
+          <p className="mt-1 text-[11px] text-faint">카톡·전화로 바뀌면 [주문 내용 고치기]에 적습니다. 견적서에서 수주확정하면 [재고 차감]이 나타납니다.</p>
         ) : null}
       </div>
     </li>

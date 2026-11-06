@@ -171,3 +171,62 @@ export function seoulParts(now: Date) {
 const won = (n: number) => Math.round(n).toLocaleString("en-US");
 export const quoteSummary = (lines: OrderedLine[]) =>
   lines.map((it, i) => `${i + 1}. ${it.name}${it.spec ? ` (${it.spec})` : ""} ${won(it.qty)} × ${won(it.price)} = ${won(it.qty * it.price)}`).join("\n");
+
+// ── 주문 뒤 바뀐 내용(카톡·전화) ─────────────────────────
+
+export type EditLine = { name: string; spec: string; qty: number; price: number };
+
+/** 화면에서 고친 줄. 수량 0인 줄은 뺀다(지운 것). 한 줄도 안 남으면 거절. */
+export function readEditLines(raw: unknown): { ok: true; lines: EditLine[] } | { ok: false; message: string } {
+  if (!Array.isArray(raw)) return { ok: false, message: "품목을 읽지 못했습니다." };
+  if (raw.length > 200) return { ok: false, message: "한 번에 200줄까지 고칠 수 있습니다." };
+  const lines: EditLine[] = [];
+  for (const r of raw as Record<string, unknown>[]) {
+    const name = typeof r?.name === "string" ? r.name.replace(/[\x00-\x1f]/g, "").trim().slice(0, 80) : "";
+    const spec = typeof r?.spec === "string" ? r.spec.replace(/[\x00-\x1f]/g, "").trim().slice(0, 30) : "";
+    const qty = Number(r?.qty), price = Number(r?.price);
+    if (!name && !qty) continue; // 빈 줄
+    if (!name) return { ok: false, message: "품목 이름이 빈 줄이 있습니다." };
+    if (!Number.isInteger(qty) || qty < 0 || qty > 1_000_000) return { ok: false, message: `${name} 수량을 확인해 주세요.` };
+    if (!Number.isFinite(price) || price < 0 || price > 100_000_000) return { ok: false, message: `${name} 단가를 확인해 주세요.` };
+    if (qty > 0) lines.push({ name, spec, qty, price: Math.round(price) });
+  }
+  if (!lines.length) return { ok: false, message: "남는 품목이 없습니다. 주문 취소라면 견적서에서 상태를 바꿔 주세요." };
+  return { ok: true, lines };
+}
+
+/** 다음 수정본 번호: 기준-R(가장 큰 개정+1). 기준 번호만 있으면 -R2. */
+export function nextRevisionNo(numbers: string[], base: string): { number: string; revision: number } {
+  let max = 1;
+  for (const n of numbers) {
+    if (n === base) continue;
+    const m = n.startsWith(base) ? n.slice(base.length).match(/^-R(\d+)$/) : null;
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return { number: `${base}-R${max + 1}`, revision: max + 1 };
+}
+
+export function quoteTotals(lines: EditLine[], taxType: string) {
+  const supply = lines.reduce((a, l) => a + l.qty * l.price, 0);
+  const vat = taxType === "과세" ? Math.round(supply * 0.1) : 0;
+  return { count: lines.length, qty: lines.reduce((a, l) => a + l.qty, 0), supply, vat, total: supply + vat };
+}
+
+/** 작업메모용 한 줄 요약: 바뀐 수량·단가, 더한 줄, 뺀 줄 */
+export function changeSummary(before: EditLine[], after: EditLine[]): string {
+  const key = (l: EditLine) => `${l.name}|${l.spec}`;
+  const fmt = (n: number) => n.toLocaleString("en-US");
+  const old = new Map(before.map((l) => [key(l), l]));
+  const out: string[] = [];
+  for (const l of after) {
+    const o = old.get(key(l));
+    if (!o) out.push(`+${l.name}${l.spec ? ` ${l.spec}` : ""} ${fmt(l.qty)}`);
+    else {
+      if (o.qty !== l.qty) out.push(`${l.name} ${fmt(o.qty)}→${fmt(l.qty)}`);
+      if (o.price !== l.price) out.push(`${l.name} 단가 ${fmt(o.price)}→${fmt(l.price)}`);
+      old.delete(key(l));
+    }
+  }
+  for (const l of old.values()) out.push(`−${l.name}${l.spec ? ` ${l.spec}` : ""}`);
+  return out.join(", ") || "내용 그대로";
+}

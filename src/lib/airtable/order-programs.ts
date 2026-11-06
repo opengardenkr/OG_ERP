@@ -2,16 +2,16 @@ import "server-only";
 
 import type { MemberName } from "@/config/users";
 import {
-  createRecord, getRecord, getRecordFresh, selectRecords, selectRecordsFresh, updateRecord, updateRecords,
+  createRecord, deleteRecord, getRecord, getRecordFresh, selectRecords, selectRecordsFresh, updateRecord, updateRecords,
 } from "@/lib/airtable/client";
 import {
   SUPPLIER_INFO, linkUrl, newLinkId, programPayloads, supplierByLabel, supplierOfGroup,
   type OrderGroup, type ProgramInput, type Selection, type Supplier,
 } from "@/lib/order";
 import {
-  deductions, isFromLink, isManagedPayload, isPickerPayload, latestRevision, mergeLines, nextQuoteNo, orderTotal, orderedLines,
+  changeSummary, deductions, isFromLink, isManagedPayload, isPickerPayload, latestRevision, nextRevisionNo, quoteTotals, mergeLines, nextQuoteNo, orderTotal, orderedLines,
   parsePayload, parseSelection, payloadKeys, quoteSummary, refreshStock, seoulParts, stockKey,
-  type LinkPayload, type OrderedLine,
+  type EditLine, type LinkPayload, type OrderedLine,
 } from "@/lib/order-program";
 import { fail, ok, type Result } from "@/lib/result";
 import { isSale, memoLine, prependMemo } from "@/lib/sales";
@@ -50,7 +50,7 @@ const Q = {
   snap: "fldqTH5ObhUM1Hbei", items: "fld11Vy38j2SZgqIf", summary: "fld8BN5izEMtiJ6p6", remarks: "fldlnG4qhBzkhqsgH",
   company: "fldMruU9RhDA44EyD", person: "fldtinVuZGVJRmSPB", phone: "fld1Wn6pq9yiqEvFy", memo: "fldLHric3VonWTZNI",
   deleted: "fldUDwBfzwcnftVsa", deletedBy: "fldea1Ig4sqNSdtw1", deletedAt: "fldHrVPSYs8vWlCpV", deletedReason: "fldDzdTDIuDO4h9y3",
-  deducted: "fld85qjebOSrZxPEH",
+  deducted: "fld85qjebOSrZxPEH", source: "fldlXLdC4aMPZBF6I", shipment: "fldTXyNhrTdftt33A",
 } as const;
 /** 라인업 재고 칸. 주문 화면(order.ts)과 같은 칸이다. */
 const STOCK: Record<OrderGroup, { table: string; field: string }> = {
@@ -111,14 +111,25 @@ async function readOrders(fresh = false): Promise<(OrderInfo & { memo: string })
   });
 }
 
-type QuoteLite = { id: string; number: string; status: string; deleted: boolean; total: number; deducted: string; at: string };
+type QuoteLite = { id: string; number: string; status: string; deleted: boolean; total: number; deducted: string; at: string; lines: EditLine[]; memo: string };
 async function readQuoteList(fresh = false): Promise<(QuoteLite & { fields: Row })[]> {
   const fields = Object.values(Q);
-  const rows = fresh ? await selectRecordsFresh<Row>(QUOTES, { fields, byId: true }) : await selectRecords<Row>(QUOTES, { fields: [Q.number, Q.status, Q.deleted, Q.total, Q.deducted, Q.at], revalidate: 60, byId: true });
+  const rows = fresh ? await selectRecordsFresh<Row>(QUOTES, { fields, byId: true }) : await selectRecords<Row>(QUOTES, { fields: [Q.number, Q.status, Q.deleted, Q.total, Q.deducted, Q.at, Q.items, Q.memo], revalidate: 60, byId: true });
   return rows.map((r) => ({
     id: r.id, number: text(r.fields[Q.number]), status: text(r.fields[Q.status]), deleted: r.fields[Q.deleted] === true,
     total: num(r.fields[Q.total]), deducted: text(r.fields[Q.deducted]), at: text(r.fields[Q.at]), fields: r.fields,
+    lines: quoteLines(r.fields), memo: text(r.fields[Q.memo]),
   }));
+}
+
+/** 견적 품목JSON → 줄 */
+function quoteLines(f: Row): EditLine[] {
+  try {
+    const data = JSON.parse(text(f[Q.items]) || "{}") as { items?: Partial<EditLine>[] };
+    return (data.items ?? []).map((l) => ({ name: String(l.name ?? ""), spec: String(l.spec ?? ""), qty: Number(l.qty) || 0, price: Number(l.price) || 0 }));
+  } catch {
+    return [];
+  }
 }
 
 /** 라인업 재고. 키 = group:rec. 비어 있으면 null. */
@@ -163,7 +174,7 @@ export async function listPrograms(): Promise<Result<{ programs: ProgramSummary[
       };
     });
     list.sort((a, b) => Number(a.status === "보관") - Number(b.status === "보관") || b.modified.localeCompare(a.modified));
-    return ok({ programs: list, loose: linkInfos.filter((l) => !l.program) });
+    return ok({ programs: list, loose: linkInfos.filter((l) => !l.program && l.status !== "마감") });
   } catch (e) {
     return fail(message(e, "주문서를 불러오지 못했다"));
   }
@@ -172,7 +183,7 @@ export async function listPrograms(): Promise<Result<{ programs: ProgramSummary[
 export type ProgramItem = { k: string; group: OrderGroup | ""; rec: string; grp: string; name: string; latin: string; unit: string; rows: { size: string; price: number; prefill: number; stock: number | string | null; pack: number }[] };
 export type LinkDetail = LinkInfo & {
   orders: OrderInfo[]; amount: number;
-  quote: { id: string; number: string; status: string; total: number; deducted: string; canDeduct: boolean } | null;
+  quote: { id: string; number: string; status: string; total: number; deducted: string; canDeduct: boolean; canEdit: boolean; lines: EditLine[]; changes: string[] } | null;
 };
 export type ProgramDetail = { id: string; supplier: Supplier | null; name: string; status: string; min: number; memo: string; note: string; editable: boolean; source: string; items: ProgramItem[]; links: LinkDetail[] };
 
@@ -202,7 +213,13 @@ export async function getProgram(id: string): Promise<Result<ProgramDetail | nul
         const q = l.merged ? latestRevision(quotes.filter((x) => !x.deleted), l.merged) : null;
         return {
           ...l, orders: got, amount: got.reduce((a, o) => a + o.total, 0),
-          quote: q ? { id: q.id, number: q.number, status: q.status, total: q.total, deducted: q.deducted, canDeduct: isSale(q.status) && !q.deducted } : null,
+          quote: q ? {
+            id: q.id, number: q.number, status: q.status, total: q.total, deducted: q.deducted, canDeduct: isSale(q.status) && !q.deducted,
+            canEdit: !isSale(q.status) && !q.deducted, lines: q.lines,
+            // 같은 견적 묶음(기준 번호·수정본)의 '주문변경' 기록, 최신이 위
+            changes: quotes.filter((x) => x.number === l.merged || x.number.startsWith(`${l.merged}-R`))
+              .flatMap((x) => x.memo.split("\n")).filter((m) => m.includes(" · 주문변경 · ")).sort().reverse().slice(0, 5),
+          } : null,
         };
       });
     return ok({
@@ -347,6 +364,38 @@ export async function mergeOrders(linkRecId: string, who: MemberName): Promise<R
     if (!mergeable.length) return fail("모든 주문이 이미 견적으로 진행됐습니다. 견적서에서 확인해 주세요.");
     const drafts = [...new Set(mergeable.map((o) => o.draft).filter(Boolean))];
 
+    // 이미 합산 견적이 있고 아직 '작성'이면 새 주문만 그 견적에 더한다 — [주문 내용 고치기]로 바꾼 줄을 지우지 않게
+    const current = info.merged ? latestRevision(quotes.filter((q) => !q.deleted), info.merged) : null;
+    if (current && current.status === "작성") {
+      const inChain = (no: string) => !!no && (no === info.merged || no.startsWith(`${info.merged}-R`));
+      const added = mergeable.filter((o) => !inChain(o.draft));
+      if (!added.length) return ok({ number: current.number, created: false, orders: mergeable.length });
+      const lines = mergeLines([current.lines, ...added.map((o) => o.lines)]);
+      const f = current.fields;
+      const totals = quoteTotals(lines, text(f[Q.tax]) === "과세" ? "과세" : "면세");
+      let snap: Record<string, unknown> = {};
+      try { snap = JSON.parse(text(f[Q.snap]) || "{}"); } catch { snap = {}; }
+      let itemsJson: Record<string, unknown> = {};
+      try { itemsJson = JSON.parse(text(f[Q.items]) || "{}"); } catch { itemsJson = {}; }
+      await updateRecord<Row>(QUOTES, current.id, {
+        [Q.count]: totals.count, [Q.qty]: totals.qty, [Q.supply]: totals.supply, [Q.vat]: totals.vat, [Q.total]: totals.total,
+        [Q.summary]: quoteSummary(lines), [Q.items]: JSON.stringify({ ...itemsJson, items: lines }),
+        [Q.snap]: JSON.stringify({ ...snap, items: lines, totals }),
+        [Q.memo]: prependMemo(text(f[Q.memo]), memoLine(new Date(), who, "합산추가", `주문 ${added.length}건(${added.map((o) => o.no).join(", ")}) 더함 · ERP 주문서`)),
+      });
+      const hide = [...new Set(added.map((o) => o.draft).filter(Boolean))].map((n) => byNo.get(n))
+        .filter((q): q is NonNullable<typeof q> => !!q && q.status === "작성" && !q.deleted && q.id !== current.id);
+      await updateRecords<Row>(QUOTES, hide.map((q) => ({
+        id: q.id,
+        fields: {
+          [Q.deleted]: true, [Q.deletedBy]: who, [Q.deletedAt]: new Date().toISOString(), [Q.deletedReason]: `합산 견적 ${current.number}에 더함`,
+          [Q.memo]: prependMemo(text(q.fields[Q.memo]), memoLine(new Date(), who, "합산", `${current.number}에 더함 · 삭제함`)),
+        },
+      })));
+      await updateRecords<Row>(REQUESTS, added.map((o) => ({ id: o.id, fields: { [R.draft]: current.number } })));
+      return ok({ number: current.number, created: false, orders: mergeable.length });
+    }
+
     // 이미 하나로 합쳐져 있으면(또는 주문이 하나뿐이면) 그 초안을 쓴다
     if (drafts.length === 1 && mergeable.every((o) => o.draft === drafts[0]) && byNo.get(drafts[0]) && !byNo.get(drafts[0])!.deleted) {
       if (info.merged !== drafts[0]) await updateRecord<Row>(LINKS, linkRecId, { [L.merged]: drafts[0] });
@@ -470,5 +519,84 @@ export async function adoptLink(linkRecId: string, who: MemberName): Promise<Res
     return ok({ id: rec.id });
   } catch (e) {
     return fail(message(e, "주문서로 옮기지 못했다"));
+  }
+}
+
+/**
+ * 주문 뒤 카톡·전화로 바뀐 내용을 그 회사 견적에 반영한다. 판매 상태(수주확정 이후) 전까지만.
+ * - 견적이 아직 '작성'(고객에게 안 나감)이면 그 견적을 그대로 고친다.
+ * - 이미 보냈으면 수정본(-R2, -R3…)을 '작성'으로 새로 만든다 — 견적서 생성기의 수정본 규칙과 같다(옛 견적은 그대로 남는다).
+ * 포털의 재고 차감·미수금·마진은 언제나 가장 최근 수정본을 따른다. 바꾼 이유는 작업메모에 '주문변경'으로 남는다.
+ */
+export async function editOrderQuote(linkRecId: string, lines: EditLine[], reason: string, who: MemberName): Promise<Result<{ number: string; created: boolean }>> {
+  try {
+    const link = await getRecordFresh<Row>(LINKS, linkRecId, true);
+    if (!link) return fail("링크를 찾지 못했습니다.");
+    const info = toLink(link.id, link.fields as Row);
+    if (!info.merged) return fail("먼저 [합산 견적서 만들기]로 견적을 만드세요.");
+    const quotes = (await readQuoteList(true)).filter((q) => !q.deleted);
+    const q = latestRevision(quotes, info.merged);
+    if (!q) return fail(`견적 ${info.merged}을 찾지 못했습니다.`);
+    if (isSale(q.status) || q.deducted) return fail(`견적 ${q.number}은 이미 ${q.status}입니다. 수주확정 뒤 변경은 견적서 생성기에서 수정본으로 고쳐 주세요.`);
+    const f = q.fields;
+    const taxType = text(f[Q.tax]) === "과세" ? "과세" : "면세";
+    const totals = quoteTotals(lines, taxType);
+    const before = quoteLines(f);
+    const detail = `${reason} · ${changeSummary(before, lines)} · 합계 ₩${num(f[Q.total]).toLocaleString("en-US")}→₩${totals.total.toLocaleString("en-US")}`;
+    let snap: Record<string, unknown> = {};
+    try { snap = JSON.parse(text(f[Q.snap]) || "{}"); } catch { snap = {}; }
+    let itemsJson: Record<string, unknown> = {};
+    try { itemsJson = JSON.parse(text(f[Q.items]) || "{}"); } catch { itemsJson = {}; }
+    const money = {
+      [Q.count]: totals.count, [Q.qty]: totals.qty, [Q.supply]: totals.supply, [Q.vat]: totals.vat, [Q.total]: totals.total,
+      [Q.summary]: quoteSummary(lines), [Q.items]: JSON.stringify({ ...itemsJson, kind: itemsJson.kind ?? "plant", items: lines }),
+    };
+
+    if (q.status === "작성") {
+      await updateRecord<Row>(QUOTES, q.id, {
+        ...money, [Q.snap]: JSON.stringify({ ...snap, items: lines, totals }),
+        [Q.memo]: prependMemo(text(f[Q.memo]), memoLine(new Date(), who, "주문변경", detail)),
+      });
+      return ok({ number: q.number, created: false });
+    }
+
+    const t = seoulParts(new Date());
+    const base = info.merged.replace(/-R\d+$/, "");
+    const next = nextRevisionNo(quotes.map((x) => x.number), base);
+    await createRecord<Row>(QUOTES, {
+      ...money,
+      [Q.number]: next.number, [Q.revision]: next.revision, [Q.source]: base, [Q.issued]: t.ymd, [Q.at]: new Date().toISOString(),
+      [Q.author]: who, [Q.kind]: text(f[Q.kind]) || "식물 도매", [Q.status]: "작성", [Q.tax]: taxType, [Q.taxReason]: text(f[Q.taxReason]) || null,
+      [Q.deal]: text(f[Q.deal]) || "일반", [Q.valid]: t.validUntil, [Q.remarks]: text(f[Q.remarks]) || null,
+      [Q.company]: text(f[Q.company]) || null, [Q.person]: text(f[Q.person]) || null, [Q.phone]: text(f[Q.phone]) || null,
+      ...(ids(f[Q.shipment]).length ? { [Q.shipment]: ids(f[Q.shipment]) } : {}),
+      [Q.snap]: JSON.stringify({
+        ...snap, items: lines, totals, quoteNo: next.number, revision: next.revision, sourceQuoteNo: base,
+        issuedDate: t.ymd, issuedDateLabel: t.label, issuedAt: t.issuedAt, validUntil: t.validUntil, author: who,
+      }),
+      [Q.memo]: memoLine(new Date(), who, "주문변경", `${q.number}의 수정본 · ${detail}`),
+    });
+    await updateRecord<Row>(QUOTES, q.id, { [Q.memo]: prependMemo(text(f[Q.memo]), memoLine(new Date(), who, "수정본", `${next.number} 작성(주문변경)`)) });
+    return ok({ number: next.number, created: true });
+  } catch (e) {
+    return fail(message(e, "주문 변경을 저장하지 못했다"));
+  }
+}
+
+/**
+ * 보관한 주문서를 지운다. 배포한 링크는 닫고(마감) 남긴다 — 고객이 받은 주소가 열려 있으면 안 되고,
+ * 받은 주문(견적요청)·견적은 거래 기록이라 지우지 않는다.
+ */
+export async function deleteProgram(id: string): Promise<Result<{ closed: number }>> {
+  try {
+    const rec = await getRecordFresh<Row>(PROGRAMS, id, true);
+    if (!rec) return fail("주문서를 찾지 못했습니다.");
+    if (text((rec.fields as Row)[P.status]) !== "보관") return fail("보관한 주문서만 지울 수 있습니다. 먼저 [보관]을 누르세요.");
+    const links = (await selectRecordsFresh<Row>(LINKS, { fields: LINK_FIELDS, byId: true })).map((r) => toLink(r.id, r.fields)).filter((l) => l.program === id);
+    await updateRecords<Row>(LINKS, links.filter((l) => l.status !== "마감").map((l) => ({ id: l.recId, fields: { [L.status]: "마감" } })));
+    await deleteRecord(PROGRAMS, id);
+    return ok({ closed: links.length });
+  } catch (e) {
+    return fail(message(e, "주문서를 지우지 못했다"));
   }
 }

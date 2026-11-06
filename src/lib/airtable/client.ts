@@ -268,3 +268,16 @@ export async function updateRecords<F>(
     await mutate<F>(tableId, "PATCH", { records: records.slice(i, i + 10) });
   }
 }
+
+/** 레코드 하나를 지운다. 되살릴 수 없으므로 화면에서 한 번 더 묻고, 서버 액션이 조건(예: 보관 상태)을 다시 확인한 뒤에만 부른다. */
+export async function deleteRecord(tableId: string, id: string): Promise<void> {
+  const token = env("AIRTABLE_TOKEN");
+  const baseId = env("AIRTABLE_BASE_ID");
+  const response = await fetch(`${API}/${baseId}/${tableId}/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!response.ok) throw new AirtableError(describe(response.status, response.statusText, tableId));
+  expireTag(tagOf(tableId));
+}
