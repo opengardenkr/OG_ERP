@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickPrice, newLinkId, readDirectInput, linkPayload, orderSummary, requestNo } from '../src/lib/order.ts';
+import { pickPrice, newLinkId, readDirectInput, linkPayload, orderSummary, requestNo, sections } from '../src/lib/order.ts';
 import { readProgramInput } from '../src/lib/order.ts';
 
 const line = (over = {}) => ({ group: 'preorder', id: 'recAAAAAAAAAAAAAA', kname: '퍼플 센세이션', sname: 'Allium', cat: '알리움', photo: true, size: '12/14', price: 500, stock: 2400, qty: 300, ...over });
@@ -18,16 +18,39 @@ test('link ids are 22 url-safe characters and do not repeat', () => {
 });
 
 test('program input is cleaned and rejects bad lines', () => {
-  const ok = readProgramInput({ name: ' 구근 가을 ', minOrder: 1000000, basis: 'air', lines: [line()] });
+  const ok = readProgramInput({ supplier: 'hbm', name: ' 구근 가을 ', minOrder: 1000000, basis: 'air', lines: [line()] });
   assert.equal(ok.ok, true);
   assert.equal(ok.value.name, '구근 가을');
   assert.equal(ok.value.basis, 'air');
   assert.equal(ok.value.id, '');
-  assert.equal(readProgramInput({ name: 'x', basis: 'nope', lines: [line()] }).value.basis, 'base');
-  assert.equal(readProgramInput({ lines: [line()] }).ok, false);
-  assert.equal(readProgramInput({ name: 'x', lines: [] }).ok, false);
-  assert.equal(readProgramInput({ name: 'x', lines: [line({ id: '../x' })] }).ok, false);
-  assert.equal(readProgramInput({ name: 'x', lines: [line({ price: 0 })] }).ok, false);
+  assert.equal(readProgramInput({ supplier: 'hbm', name: 'x', basis: 'nope', lines: [line()] }).value.basis, 'base');
+  assert.equal(readProgramInput({ supplier: 'hbm', lines: [line()] }).ok, false);
+  assert.equal(readProgramInput({ supplier: 'hbm', name: 'x', lines: [] }).ok, false);
+  assert.equal(readProgramInput({ supplier: 'hbm', name: 'x', lines: [line({ id: '../x' })] }).ok, false);
+  assert.equal(readProgramInput({ supplier: 'hbm', name: 'x', lines: [line({ price: 0 })] }).ok, false);
+});
+
+test('주문서는 업체 하나: 업체가 없거나 다른 업체 품목이 섞이면 거절', () => {
+  assert.equal(readProgramInput({ name: 'x', lines: [line()] }).ok, false);
+  const mixed = readProgramInput({ supplier: 'hbm', name: 'x', lines: [line(), line({ group: 'hoogenraad', id: 'recCCCCCCCCCCCCCC' })] });
+  assert.equal(mixed.ok, false);
+  assert.match(mixed.message, /다른 업체/);
+  assert.equal(readProgramInput({ supplier: 'hbm', name: 'x', lines: [line({ group: 'preorder' }), line({ group: 'hbm', id: 'recBBBBBBBBBBBBBB' })] }).ok, true);
+});
+
+test('HBM은 크레이트 행(5번째 칸 = 크레이트당 구수), 미리 채울 수량은 크레이트로', () => {
+  const r = readProgramInput({ supplier: 'hbm', name: 'x', prefill: true, lines: [line({ group: 'preorder', size: '12/14', price: 500, qty: 2000, pack: 500 }), line({ group: 'preorder', size: '14/+', price: 700, qty: 30 })] });
+  assert.equal(r.ok, true);
+  const p = linkPayload(r.value.lines, true);
+  assert.deepEqual(p.items[0].rows, [['12/14', 2400, 500, 4, 500], ['14/+', 2400, 700, 30]]);
+  // 국내·호게나르드 품목은 크레이트 칸을 받지 않는다
+  const d = readProgramInput({ supplier: 'domestic', name: 'x', lines: [line({ group: 'immediate', pack: 500 })] });
+  assert.equal(d.value.lines[0].pack, undefined);
+});
+
+test('웹 주문 페이지 묶음: 분류 + 학명 속명', () => {
+  assert.deepEqual(sections([{ grp: '알리움', latin: "Allium 'Gladiator'" }, { grp: '알리움', latin: 'Allium x' }, { grp: '튤립', latin: "Tulipa 'Pink Sound'" }, { grp: '기타', latin: '' }]),
+    [['알리움', 'Allium'], ['튤립', 'Tulipa']]);
 });
 
 test('direct order needs a customer and quantities', () => {

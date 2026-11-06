@@ -15,12 +15,13 @@ import type { MemberName } from "@/config/users";
  * 필드는 ID로 부른다 — 여러 표의 SKU 이름 앞에 보이지 않는 BOM 문자가 있다.
  */
 
-type PriceSource = { table: string; formula?: string; base: string; air?: string; gov?: string; pre?: string; stock: string };
+type PriceSource = { table: string; formula?: string; base: string; air?: string; gov?: string; pre?: string; stock: string; pack?: string };
 const PRICE_SOURCES: Record<OrderGroup, PriceSource> = {
   // 국내 라인업: 도매가 / 관급가 / 재고(본·구)
   immediate: { table: "tblDMLlaBwkW1NfhU", base: "fldCjIpc6W8GzdXjm", gov: "fldi11jiWAIbIG0yG", stock: "fldNMlilMRReYM5tn" },
   // 구근 라인업: 해상판매가(기본) / 항공판매가 / 관급가 / 재고(구)
-  preorder: { table: "tblylbZq6PLfzH1Ol", base: "fldJD6KCwjUUfQIiu", air: "fldP1ClP53qn5GLhZ", gov: "fldQo3P5lI5yoCY97", stock: "fldWsbfXjYE4al0rQ" },
+  // + 크레이트당 구수(단일선택, "500"·"확인중" 같은 글자) — HBM 인보이스처럼 크레이트로 판다
+  preorder: { table: "tblylbZq6PLfzH1Ol", base: "fldJD6KCwjUUfQIiu", air: "fldP1ClP53qn5GLhZ", gov: "fldQo3P5lI5yoCY97", stock: "fldWsbfXjYE4al0rQ", pack: "fldy3UkEVsXaErEki" },
   // 호게나르드 DM: 도매가(₩) / 사전예약가 / 현지재고
   hoogenraad: { table: "tblVVRTKfyViCI1aW", formula: "NOT({노출제외})", base: "flddWryT0w8bnvmis", pre: "fld7phSyk71vg8cTj", stock: "fldXhGrdwcxMMFQhF" },
   // Master DB(HBM 확정분): 단가_WON / 재고
@@ -72,9 +73,9 @@ const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : u
 
 async function readPrices(group: OrderGroup) {
   const s = PRICE_SOURCES[group];
-  const fields = [s.base, s.air, s.gov, s.pre, s.stock].filter((f): f is string => Boolean(f));
+  const fields = [s.base, s.air, s.gov, s.pre, s.stock, s.pack].filter((f): f is string => Boolean(f));
   const rows = await readAll(s.table, fields, s.formula);
-  const map = new Map<string, { prices: Prices; stock: number | null }>();
+  const map = new Map<string, { prices: Prices; stock: number | null; pack?: number }>();
   for (const r of rows) {
     const f = r.fields;
     const prices: Prices = {};
@@ -83,7 +84,9 @@ async function readPrices(group: OrderGroup) {
     if (s.gov && num(f[s.gov])) prices.gov = num(f[s.gov]);
     if (s.pre && num(f[s.pre])) prices.pre = num(f[s.pre]);
     const stock = num(f[s.stock]);
-    map.set(r.id, { prices, stock: stock !== undefined && stock > 0 ? Math.floor(stock) : null });
+    const raw = s.pack ? f[s.pack] : undefined;
+    const pack = Number(typeof raw === "object" && raw && "name" in raw ? (raw as { name: unknown }).name : raw);
+    map.set(r.id, { prices, stock: stock !== undefined && stock > 0 ? Math.floor(stock) : null, ...(Number.isInteger(pack) && pack > 0 ? { pack } : {}) });
   }
   return map;
 }
@@ -106,7 +109,7 @@ async function loadCatalog(): Promise<OrderItem[]> {
         id: p.id, group, source: p.source || GROUP_INFO[group].label, cat: (p.cat || []).find(Boolean) || "",
         kname: p.kname || p.sname || "", sname: p.sname || "", sku: p.sku || "",
         image: p.image ? `${SITE}/api/plant-image?group=${group}&id=${encodeURIComponent(p.id)}&index=0&w=520` : "",
-        options: sizes.map((size) => ({ size: size.replace(/\s*규격$/, ""), prices: extra.prices, stock: extra.stock })),
+        options: sizes.map((size) => ({ size: size.replace(/\s*규격$/, ""), prices: extra.prices, stock: extra.stock, ...(extra.pack ? { pack: extra.pack } : {}) })),
       };
     }).filter((it) => it.kname && it.options.length);
   }));
@@ -114,7 +117,7 @@ async function loadCatalog(): Promise<OrderItem[]> {
 }
 
 /** 성공한 결과만 5분 캐시. 실패는 던져서 캐시되지 않게 한다(CLAUDE.md §6). */
-export const getOrderCatalog = unstable_cache(loadCatalog, ["order-catalog-v1"], { revalidate: 300 });
+export const getOrderCatalog = unstable_cache(loadCatalog, ["order-catalog-v2"], { revalidate: 300 });
 
 async function create(table: string, fields: Record<string, unknown>, what: string) {
   const { token, base } = env();

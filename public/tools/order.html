@@ -18,6 +18,13 @@ button{cursor:pointer}
 .only{display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:600;background:#fff;border:1px solid #C9D1C4;border-radius:8px;padding:0 10px;height:40px}
 .only input{width:18px;height:18px;accent-color:var(--green)}
 .status{font-size:12.5px;color:var(--gray);margin-top:6px}
+.seg{display:flex;gap:0;margin-bottom:8px;border:1px solid #C9D1C4;border-radius:9px;overflow:hidden;background:#fff;width:max-content;max-width:100%}
+.seg button{height:38px;padding:0 16px;border:0;border-right:1px solid #C9D1C4;background:#fff;font-size:14px;font-weight:700;color:var(--gray)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--green);color:#fff}
+.seg-note{font-size:12px;color:var(--gray);margin:-2px 0 8px}
+.o-pack{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--gray);width:100%}
+.o-pack input{width:64px;height:28px;border:1px solid #C9D1C4;border-radius:6px;text-align:right;padding:0 6px;font-size:13px}
 .status.err{color:var(--warn);font-weight:600}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;margin-top:12px}
 .card{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
@@ -99,6 +106,8 @@ button{cursor:pointer}
 </head>
 <body>
 <div class="top"><div class="wrap">
+  <div class="seg" id="seg" role="tablist" aria-label="업체"></div>
+  <p class="seg-note" id="segNote"></p>
   <div class="tools">
     <input id="q" type="search" placeholder="품종·학명·규격 검색" aria-label="품종·학명·규격 검색">
     <select id="src" aria-label="공급처"><option value="">전체 공급처</option><option value="immediate">국내 농장</option><option value="preorder">구근 라인업</option><option value="hoogenraad">호게나르드</option><option value="hbm">HBM</option></select>
@@ -135,15 +144,28 @@ button{cursor:pointer}
   var PROGRAM = (new URLSearchParams(location.search).get('program') || '').match(/^(new|rec[A-Za-z0-9]{14})$/) ? new URLSearchParams(location.search).get('program') : '';
   var DRAFT = 'og-order-draft-v1' + (PROGRAM ? ':' + PROGRAM : ''), PAGE = 30;
   var program = { name: '', minOrder: 0, memo: '', prefill: false, missing: 0 };
+  // 업체: 주문서 하나 = 업체 하나(src/lib/order.ts SUPPLIER_INFO와 같다). HBM은 인보이스처럼 크레이트로 판다.
+  var SUPPLIERS = {
+    domestic: { label:'국내', groups:['immediate'], crate:false, notes:[] },
+    hoogenraad: { label:'호게나르드', groups:['hoogenraad'], crate:false, notes:['네덜란드 호게나르드 라이너(P9) 사전 주문입니다.', '현지 출하 가능 기간: 37주차 ~ 이듬해 19주차', '가격 VAT 별도'] },
+    hbm: { label:'HBM', groups:['preorder','hbm'], crate:true, notes:['**크레이트 단위 주문** — 크레이트당 구수는 품목마다 다릅니다.', '현지 작황에 따라 수량·규격이 조정될 수 있습니다.', '가격 VAT 별도'] }
+  };
+  var SUPPLIER_NOTE = { domestic:'국내 라인업 · 주 단위', hoogenraad:'호게나르드 DM · 라이너(P9) 주 단위 — 주문확인서와 같은 단위', hbm:'구근 라인업·HBM · 크레이트 단위(크레이트당 구수 × 크레이트) — 인보이스와 같은 단위' };
+  var supplierParam = new URLSearchParams(location.search).get('supplier');
+  var supplier = SUPPLIERS[supplierParam] ? supplierParam : (PROGRAM === 'new' ? 'domestic' : '');
+  function supplierOf(group){ var s = ''; Object.keys(SUPPLIERS).forEach(function(k){ if (SUPPLIERS[k].groups.indexOf(group) >= 0) s = k; }); return s; }
+  function isCrate(group){ var s = supplierOf(group); return !!(s && SUPPLIERS[s].crate); }
+  var packs = {};
   var $ = function(id){ return document.getElementById(id); };
   var fmt = function(n){ return Number(n).toLocaleString('ko-KR'); };
   var esc = function(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
   var clean = function(v){ return String(v || '').normalize('NFKC').toLocaleLowerCase('ko').replace(/\s+/g, ''); };
   var items = [], byKey = {}, visible = PAGE, qty = {}, basis = 'base', loaded = false;
 
-  try { var d = JSON.parse(sessionStorage.getItem(DRAFT) || '{}'); qty = d.qty || {}; basis = BASIS[d.basis] ? d.basis : 'base'; } catch (e) {}
+  try { var d = JSON.parse(sessionStorage.getItem(DRAFT) || '{}'); qty = d.qty || {}; packs = d.packs || {}; basis = BASIS[d.basis] ? d.basis : 'base'; if (PROGRAM === 'new' && !supplierParam && SUPPLIERS[d.supplier]) supplier = d.supplier; } catch (e) {}
   $('basis').value = basis;
-  function save(){ try { sessionStorage.setItem(DRAFT, JSON.stringify({ qty: qty, basis: basis })); } catch (e) {} }
+  function save(){ try { sessionStorage.setItem(DRAFT, JSON.stringify({ qty: qty, packs: packs, basis: basis, supplier: supplier })); } catch (e) {} }
+  function packOf(k, opt){ var p = packs[k]; return p === 0 ? 0 : (p > 0 ? p : (opt && opt.pack > 0 ? opt.pack : 0)); }
 
   function keyOf(it, size){ return it.group + ':' + it.id + '|' + size; }
   function priceOf(opt){
@@ -157,10 +179,12 @@ button{cursor:pointer}
     Object.keys(qty).forEach(function(k){
       var q = qty[k], ref = byKey[k];
       if (!(q > 0) || !ref) return;
+      if (PROGRAM && supplier && SUPPLIERS[supplier].groups.indexOf(ref.it.group) < 0) return; // 주문서에는 고른 업체 품목만 넣는다(바로 접수는 업체를 섞어도 된다)
       var pr = priceOf(ref.opt);
       if (!pr.price) return;
+      var pack = isCrate(ref.it.group) ? packOf(k, ref.opt) : 0;
       out.push({ key:k, group:ref.it.group, id:ref.it.id, kname:ref.it.kname, sname:ref.it.sname, cat:ref.it.cat || GROUPS[ref.it.group].label,
-        photo:!!ref.it.image, size:ref.opt.size, price:pr.price, stock:ref.opt.stock, qty:q, unit:GROUPS[ref.it.group].unit });
+        photo:!!ref.it.image, size:ref.opt.size, price:pr.price, stock:ref.opt.stock, qty:q, unit:GROUPS[ref.it.group].unit, pack:pack });
     });
     return out;
   }
@@ -170,17 +194,20 @@ button{cursor:pointer}
     var info = GROUPS[it.group];
     var opts = it.options.map(function(o){
       var k = keyOf(it, o.size), pr = priceOf(o), q = qty[k] || 0, max = o.stock > 0 ? o.stock : 0;
+      var crate = isCrate(it.group), pack = crate ? packOf(k, o) : 0, step = pack || info.step;
       var stock = o.stock > 0 ? '<span class="o-stock">재고 ' + fmt(o.stock) + info.unit + '</span>' : '';
       var right = pr.price
         ? '<div class="qty">' + (max ? '<button type="button" class="all' + (q === max ? ' on' : '') + '" data-act="all" aria-label="' + esc(it.kname + ' ' + o.size) + ' 전량">전량</button>' : '')
           + '<div class="stepper"><button type="button" class="st-btn" data-act="minus" aria-label="빼기">−</button>'
-          + '<input type="number" inputmode="numeric" min="0" step="' + info.step + '" value="' + q + '" aria-label="' + esc(it.kname + ' ' + o.size) + ' 수량(' + info.unit + ')">'
+          + '<input type="number" inputmode="numeric" min="0" step="' + step + '" value="' + q + '" aria-label="' + esc(it.kname + ' ' + o.size) + ' 수량(' + info.unit + ')">'
           + '<button type="button" class="st-btn" data-act="plus" aria-label="더하기">+</button></div></div>'
         : '<span class="o-none">가격 미등록</span>';
-      return '<div class="opt' + (q > 0 ? ' on' : '') + '" data-key="' + esc(k) + '" data-max="' + max + '" data-step="' + info.step + '" data-unit="' + info.unit + '">'
+      var packTxt = crate ? '<label class="o-pack">크레이트당 <input type="number" inputmode="numeric" min="0" data-pack="1" value="' + (pack || '') + '" placeholder="낱개" aria-label="' + esc(it.kname + ' ' + o.size) + ' 크레이트당 구수">구'
+        + (pack && pr.price ? ' · 크레이트 ₩' + fmt(pr.price * pack) : '') + (q && pack ? ' · ' + fmt(Math.floor(q / pack)) + '크레이트' : '') + '</label>' : '';
+      return '<div class="opt' + (q > 0 ? ' on' : '') + '" data-key="' + esc(k) + '" data-max="' + max + '" data-step="' + step + '" data-unit="' + info.unit + '">'
         + '<div class="opt-info"><span class="o-spec">' + esc(o.size) + '</span>' + stock
         + (pr.price ? '<span class="o-price">₩' + fmt(pr.price) + '<small>/' + info.unit + '</small>' + (pr.fallback ? '<em>' + BASIS[basis] + ' 없음 · 기본가</em>' : '') + '</span>' : '')
-        + '</div>' + right + '<div class="o-warn" hidden></div></div>';
+        + packTxt + '</div>' + right + '<div class="o-warn" hidden></div></div>';
     }).join('');
     var picked = it.options.some(function(o){ return qty[keyOf(it, o.size)] > 0; });
     return '<article class="card' + (picked ? ' picked' : '') + '">'
@@ -195,6 +222,7 @@ button{cursor:pointer}
     var text = clean($('q').value), src = $('src').value, only = $('only').checked, all = $('noprice').checked;
     unpriced = 0;
     return items.filter(function(it){
+      if (supplier && SUPPLIERS[supplier].groups.indexOf(it.group) < 0) return false;
       if (src && it.group !== src) return false;
       if (!all && !hasPrice(it)) { unpriced++; return false; }
       if (only && !it.options.some(function(o){ return qty[keyOf(it, o.size)] > 0; })) return false;
@@ -233,7 +261,13 @@ button{cursor:pointer}
     else if (b.dataset.act === 'minus') setQty(row, cur - step);
     else setQty(row, parseInt(row.dataset.max, 10));
   });
-  $('list').addEventListener('change', function(e){ if (e.target.matches('.stepper input')) setQty(e.target.closest('.opt'), parseInt(e.target.value, 10)); });
+  $('list').addEventListener('change', function(e){
+    if (e.target.matches('.stepper input')) setQty(e.target.closest('.opt'), parseInt(e.target.value, 10));
+    if (e.target.matches('input[data-pack]')) {
+      var k = e.target.closest('.opt').dataset.key, v = parseInt(e.target.value, 10);
+      packs[k] = v > 0 ? Math.min(v, 100000) : 0; save(); render(); updateBar();
+    }
+  });
   $('list').addEventListener('focusin', function(e){ if (e.target.matches('.stepper input') && e.target.value === '0') e.target.select(); });
   $('q').addEventListener('input', function(){ visible = PAGE; render(); });
   $('src').addEventListener('change', function(){ visible = PAGE; render(); });
@@ -242,6 +276,21 @@ button{cursor:pointer}
   $('basis').addEventListener('change', function(){ basis = $('basis').value; save(); render(); updateBar(); });
   $('more').addEventListener('click', function(){ visible += PAGE; render(); });
 
+  function renderSeg(){
+    var keys = Object.keys(SUPPLIERS), html = '';
+    if (!PROGRAM) html += '<button type="button" role="tab" data-s=""' + (supplier ? '' : ' class="on"') + '>전체</button>';
+    keys.forEach(function(k){ html += '<button type="button" role="tab" data-s="' + k + '"' + (supplier === k ? ' class="on"' : '') + '>' + SUPPLIERS[k].label + '</button>'; });
+    $('seg').innerHTML = html;
+    $('segNote').textContent = supplier ? SUPPLIER_NOTE[supplier] : '업체를 고르면 그 업체 품목만 보입니다. 주문서는 업체 하나로 만듭니다.';
+    // 업체를 골랐으면 공급처 고르기는 그 업체 안에서만
+    Array.prototype.forEach.call($('src').options, function(o){ o.hidden = !!(o.value && supplier && SUPPLIERS[supplier].groups.indexOf(o.value) < 0); });
+    if ($('src').selectedOptions[0] && $('src').selectedOptions[0].hidden) $('src').value = '';
+  }
+  $('seg').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-s]'); if (!b) return;
+    if (/^rec/.test(PROGRAM) && b.dataset.s !== supplier && lines().length && !confirm('업체를 바꾸면 지금 고른 품목은 이 주문서에서 빠집니다. 바꿀까요?')) return;
+    supplier = b.dataset.s; visible = PAGE; save(); renderSeg(); render(); updateBar();
+  });
   function updateBar(){
     var ls = lines(), total = ls.reduce(function(s, l){ return s + l.price * l.qty; }, 0);
     $('cnt').innerHTML = ls.length ? '고른 규격 ' + ls.length + '개 <button type="button" id="clear">비우기</button>' : '고른 품목이 없습니다';
@@ -275,7 +324,7 @@ button{cursor:pointer}
       submit().catch(function(x){ err.textContent = x.message || '저장하지 못했습니다.'; btn.disabled = false; btn.textContent = label; });
     });
   }
-  function payload(l){ return { group:l.group, id:l.id, kname:l.kname, sname:l.sname, cat:l.cat, photo:l.photo, size:l.size, price:l.price, stock:l.stock, qty:l.qty }; }
+  function payload(l){ return { group:l.group, id:l.id, kname:l.kname, sname:l.sname, cat:l.cat, photo:l.photo, size:l.size, price:l.price, stock:l.stock, qty:l.qty, pack:l.pack || 0 }; }
   function copy(text, msg){
     var done = function(){ $(msg).textContent = '복사했습니다.'; };
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function(){ prompt('아래 내용을 복사하세요', text); });
@@ -284,8 +333,9 @@ button{cursor:pointer}
 
   $('link').addEventListener('click', function(){
     var st = updateBar(); if (!st.lines.length) return;
+    if (!supplier) { alert('위에서 업체(국내·호게나르드·HBM)를 먼저 고르세요. 주문서는 업체 하나로 만듭니다.'); return; }
     var editing = /^rec/.test(PROGRAM);
-    openSheet('<h2 id="sheetH">' + (editing ? '주문서 고치기' : '주문서로 저장') + '</h2><p class="sub">고른 ' + st.lines.length + '개 규격을 주문서(폴더)로 저장합니다. '
+    openSheet('<h2 id="sheetH">' + SUPPLIERS[supplier].label + ' ' + (editing ? '주문서 고치기' : '주문서로 저장') + '</h2><p class="sub">고른 ' + st.lines.length + '개 규격을 주문서(폴더)로 저장합니다. '
       + (editing ? '이미 배포한 회사 링크도 함께 바뀝니다.' : '저장한 뒤 주문서에서 회사마다 링크를 배포합니다.') + '</p>'
       + (program.missing ? '<p class="err">카탈로그에서 사라진 품목 ' + program.missing + '개는 이번 저장에서 빠집니다.</p>' : '')
       + summary(st, false)
@@ -296,12 +346,14 @@ button{cursor:pointer}
       + '<label class="check"><input type="checkbox" id="pPre"><span>입력한 수량을 고객 화면에 미리 채우기 <small style="color:var(--gray)">(고객이 고칠 수 있음)</small></span></label>'
       + '<p class="err" id="sheetErr" role="alert"></p>'
       + '<div class="row2"><button type="button" class="ghost" data-close>닫기</button><button type="submit" class="send" id="sheetSend">' + (editing ? '고친 내용 저장' : '주문서 저장') + '</button></div></form>');
-    $('pName').value = program.name; $('pMin').value = program.minOrder ? String(program.minOrder) : ''; $('pMemo').value = program.memo; $('pPre').checked = program.prefill;
+    $('pName').value = program.name; $('pMin').value = program.minOrder ? String(program.minOrder) : ''; $('pPre').checked = program.prefill;
+    // 새 주문서는 업체 안내 문구(인보이스 조건에서 고객용으로 옮긴 것)를 채워 둔다 — 고쳐 써도 된다
+    $('pMemo').value = program.memo || (!editing && supplier ? SUPPLIERS[supplier].notes.join('\n') : '');
     wire(function(){
       var name = $('pName').value.trim();
       if (!name) return Promise.reject(new Error('주문서 이름을 적어 주세요.'));
       return post('/api/order/programs', {
-        id: editing ? PROGRAM : '', name: name, minOrder: parseInt(($('pMin').value || '').replace(/\D/g, ''), 10) || 0,
+        id: editing ? PROGRAM : '', supplier: supplier, name: name, minOrder: parseInt(($('pMin').value || '').replace(/\D/g, ''), 10) || 0,
         memo: $('pMemo').value, prefill: $('pPre').checked, basis: basis, lines: st.lines.map(payload),
       }).then(function(j){
         try { sessionStorage.removeItem(DRAFT); } catch (e) {}
@@ -375,9 +427,10 @@ button{cursor:pointer}
         if (j.editable === false) throw new Error('사진·크레이트를 손으로 넣은 주문서라 여기서 고칠 수 없습니다. 주문서 화면으로 돌아가 주세요.');
         program.name = j.name || ''; program.minOrder = j.minOrder || 0; program.memo = j.memo || '';
         var sel = j.selection || { qty: {} };
+        if (SUPPLIERS[j.supplier]) supplier = j.supplier; else if (SUPPLIERS[sel.supplier]) supplier = sel.supplier;
         program.prefill = !!sel.prefill;
         var fresh = !Object.keys(qty).length;
-        if (fresh) { qty = {}; Object.keys(sel.qty || {}).forEach(function(k){ if (sel.qty[k] > 0) qty[k] = sel.qty[k]; }); if (BASIS[sel.basis]) { basis = sel.basis; $('basis').value = basis; } save(); }
+        if (fresh) { qty = {}; packs = {}; Object.keys(sel.qty || {}).forEach(function(k){ if (sel.qty[k] > 0) qty[k] = sel.qty[k]; }); Object.keys(sel.pack || {}).forEach(function(k){ if (sel.pack[k] > 0) packs[k] = sel.pack[k]; }); if (BASIS[sel.basis]) { basis = sel.basis; $('basis').value = basis; } save(); }
         program.missing = Object.keys(qty).filter(function(k){ return !byKey[k]; }).length;
         $('only').checked = true;
       })
@@ -392,7 +445,7 @@ button{cursor:pointer}
         items.forEach(function(it){ it.options.forEach(function(o){ byKey[keyOf(it, o.size)] = { it: it, opt: o }; }); });
         loaded = true; importSelection();
         return loadProgram().then(function(){
-          render(); updateBar();
+          renderSeg(); render(); updateBar();
           if (!items.length) { $('empty').hidden = false; $('empty').className = 'empty'; $('empty').textContent = '카탈로그에 품목이 없습니다.'; }
         });
       })
@@ -402,7 +455,7 @@ button{cursor:pointer}
         $('retry').addEventListener('click', load);
       });
   }
-  updateBar();
+  renderSeg(); updateBar();
   load();
 })();
 </script>

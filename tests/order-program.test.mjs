@@ -8,11 +8,11 @@ import { programPayloads, readProgramInput } from '../src/lib/order.ts';
 const line = (over = {}) => ({ group: 'hoogenraad', id: 'rec01OSuUN7vaqWg2', kname: "매자나무 '로즈글로우'", sname: '', cat: '매자나무', photo: true, size: 'P9', price: 3900, stock: 1200, qty: 10, ...over });
 
 test('주문서 저장값: 링크용 품목JSON과 다시 고칠 선택 상태를 함께 만든다', () => {
-  const input = readProgramInput({ name: '라이너', basis: 'pre', prefill: false, lines: [line(), line({ size: 'P12', price: 5200, qty: 0 })] }).value;
+  const input = readProgramInput({ supplier: 'hoogenraad', name: '라이너', basis: 'pre', prefill: false, lines: [line(), line({ size: 'P12', price: 5200, qty: 0 })] }).value;
   const { items, selection } = programPayloads(input);
   assert.equal(items.items.length, 1);
   assert.deepEqual(items.items[0].rows, [['P9', 1200, 3900, 0], ['P12', 1200, 5200, 0]]);
-  assert.deepEqual(selection, { v: 1, basis: 'pre', prefill: false, qty: { 'hoogenraad:rec01OSuUN7vaqWg2|P9': 10, 'hoogenraad:rec01OSuUN7vaqWg2|P12': 1 } });
+  assert.deepEqual(selection, { v: 1, supplier: 'hoogenraad', basis: 'pre', prefill: false, qty: { 'hoogenraad:rec01OSuUN7vaqWg2|P9': 10, 'hoogenraad:rec01OSuUN7vaqWg2|P12': 1 }, pack: {} });
 });
 
 test('재고만 바꾸고 크레이트·가격 같은 다른 칸은 그대로', () => {

@@ -14,6 +14,27 @@ export const GROUP_INFO: Record<OrderGroup, { label: string; unit: string; step:
   hbm: { label: "HBM", unit: "구", step: 100 },
 };
 
+/**
+ * 주문서는 업체 하나로 만든다(2026-11-06 사용자 요청: 국내 · 호게나르드 · HBM).
+ * 업체마다 들여오는 서류가 다르다 — 호게나르드 주문확인서는 라이너(P9)를 주 단위로,
+ * HBM 인보이스는 구근을 크레이트(크레이트당 구수 × 크레이트 수) 단위로 적는다. 고객 주문서도 그 단위를 따른다.
+ */
+export const SUPPLIERS = ["domestic", "hoogenraad", "hbm"] as const;
+export type Supplier = (typeof SUPPLIERS)[number];
+export const SUPPLIER_INFO: Record<Supplier, { label: string; groups: OrderGroup[]; crate: boolean; notes: string[] }> = {
+  domestic: { label: "국내", groups: ["immediate"], crate: false, notes: [] },
+  hoogenraad: {
+    label: "호게나르드", groups: ["hoogenraad"], crate: false,
+    notes: ["네덜란드 호게나르드 라이너(P9) 사전 주문입니다.", "현지 출하 가능 기간: 37주차 ~ 이듬해 19주차", "가격 VAT 별도"],
+  },
+  hbm: {
+    label: "HBM", groups: ["preorder", "hbm"], crate: true,
+    notes: ["**크레이트 단위 주문** — 크레이트당 구수는 품목마다 다릅니다.", "현지 작황에 따라 수량·규격이 조정될 수 있습니다.", "가격 VAT 별도"],
+  },
+};
+export const supplierOfGroup = (g: OrderGroup): Supplier => SUPPLIERS.find((s) => SUPPLIER_INFO[s].groups.includes(g)) ?? "domestic";
+export const supplierByLabel = (label: string): Supplier | null => SUPPLIERS.find((s) => SUPPLIER_INFO[s].label === label) ?? null;
+
 export const PRICE_BASES = ["base", "air", "gov", "pre"] as const;
 export type PriceBasis = (typeof PRICE_BASES)[number];
 export const BASIS_LABEL: Record<PriceBasis, string> = {
@@ -21,7 +42,8 @@ export const BASIS_LABEL: Record<PriceBasis, string> = {
 };
 export type Prices = Partial<Record<PriceBasis, number>>;
 
-export type OrderOption = { size: string; prices: Prices; stock: number | null };
+/** pack = 크레이트당 구수(HBM). 없으면 낱개로 판다. */
+export type OrderOption = { size: string; prices: Prices; stock: number | null; pack?: number };
 export type OrderItem = {
   id: string; group: OrderGroup; source: string; cat: string; kname: string; sname: string;
   sku: string; image: string; options: OrderOption[];
@@ -51,7 +73,7 @@ export const linkUrl = (id: string) => `${SITE}/o/${id}`;
 /** 화면에서 보내오는 한 줄 */
 export type OrderLine = {
   group: OrderGroup; id: string; kname: string; sname: string; cat: string; photo: boolean;
-  size: string; price: number; stock: number | null; qty: number;
+  size: string; price: number; stock: number | null; qty: number; pack?: number;
 };
 
 export type DirectInput = { customer: string; phone: string; memo: string; lines: OrderLine[] };
@@ -77,6 +99,8 @@ export function readLines(raw: unknown, needQty: boolean): Check<OrderLine[]> {
       photo: r.photo === true, size: str(r.size, 20), price: Number.isFinite(price) ? Math.round(price) : 0,
       stock: intOr(r.stock, null), qty: Math.min(qty, 1_000_000),
     };
+    const pack = Number(r.pack);
+    if (SUPPLIER_INFO[supplierOfGroup(group)].crate && Number.isInteger(pack) && pack > 0 && pack <= 100_000) line.pack = pack;
     if (!line.kname || !line.size || line.price <= 0) return { ok: false, message: `${line.kname || "품목"}의 규격·가격을 확인해 주세요.` };
     if (needQty && line.qty <= 0) return { ok: false, message: "수량을 입력한 품목만 주문할 수 있습니다." };
     lines.push(line);
@@ -100,7 +124,8 @@ export function readDirectInput(raw: unknown): Check<DirectInput> {
  * rows = [규격, 재고|null, 단가, 미리 채울 수량]
  */
 export function linkPayload(lines: OrderLine[], prefill: boolean) {
-  const cards = new Map<string, { k: string; group: OrderGroup; rec: string; photo: boolean; grp: string; name: string; latin: string; unit: string; step: number; rows: [string, number | null, number, number][] }>();
+  type Row = [string, number | null, number, number] | [string, number | null, number, number, number];
+  const cards = new Map<string, { k: string; group: OrderGroup; rec: string; photo: boolean; grp: string; name: string; latin: string; unit: string; step: number; rows: Row[] }>();
   for (const l of lines) {
     const key = l.group + ":" + l.id;
     let card = cards.get(key);
@@ -109,9 +134,27 @@ export function linkPayload(lines: OrderLine[], prefill: boolean) {
         unit: GROUP_INFO[l.group].unit, step: GROUP_INFO[l.group].step, rows: [] };
       cards.set(key, card);
     }
-    if (!card.rows.some((r) => r[0] === l.size)) card.rows.push([l.size, l.stock, l.price, prefill ? l.qty : 0]);
+    if (card.rows.some((r) => r[0] === l.size)) continue;
+    // 크레이트 행: 고객은 크레이트 수로 넣는다(웹 주문 페이지가 5번째 칸을 크레이트당 구수로 읽는다). 미리 채울 수량도 크레이트로.
+    if (l.pack) card.rows.push([l.size, l.stock, l.price, prefill ? Math.floor(l.qty / l.pack) : 0, l.pack]);
+    else card.rows.push([l.size, l.stock, l.price, prefill ? l.qty : 0]);
   }
-  return { v: 1 as const, items: [...cards.values()] };
+  const items = [...cards.values()];
+  return { v: 1 as const, groups: sections(items), items };
+}
+
+/**
+ * 웹 주문 페이지의 묶음 제목: [분류, 학명 속명]. 인보이스처럼 속(ALLIUM·MUSCARI…)으로 나눠 보인다.
+ * 영문이 없으면(학명이 비었거나 글자가 다르면) 웹이 알아서 순서대로 붙인다.
+ */
+export function sections(items: { grp: string; latin: string }[]): [string, string][] {
+  const out: [string, string][] = [];
+  for (const it of items) {
+    if (!it.grp || out.some((g) => g[0] === it.grp)) continue;
+    const genus = (it.latin.match(/^[A-Za-z]{2,30}/) ?? [""])[0];
+    if (genus) out.push([it.grp, genus[0].toUpperCase() + genus.slice(1).toLowerCase()]);
+  }
+  return out;
 }
 
 const won = (n: number) => n.toLocaleString("en-US");
@@ -129,9 +172,9 @@ export function requestNo(now: Date, random: () => number = Math.random): string
 }
 
 /** 주문서(폴더) 저장 입력. 주문 화면 → POST /api/order/programs */
-export type ProgramInput = { id: string; name: string; minOrder: number; memo: string; prefill: boolean; basis: PriceBasis; lines: OrderLine[] };
+export type ProgramInput = { id: string; supplier: Supplier; name: string; minOrder: number; memo: string; prefill: boolean; basis: PriceBasis; lines: OrderLine[] };
 /** 주문 화면에서 다시 고칠 때 쓰는 선택 상태. qty 키는 주문 화면과 같다: `group:rec|규격` */
-export type Selection = { v: 1; basis: PriceBasis; prefill: boolean; qty: Record<string, number> };
+export type Selection = { v: 1; supplier?: Supplier; basis: PriceBasis; prefill: boolean; qty: Record<string, number>; pack?: Record<string, number> };
 
 export function readProgramInput(raw: unknown): Check<ProgramInput> {
   const b = (raw ?? {}) as Record<string, unknown>;
@@ -140,11 +183,15 @@ export function readProgramInput(raw: unknown): Check<ProgramInput> {
   const id = typeof b.id === "string" && /^rec[A-Za-z0-9]{14}$/.test(b.id) ? b.id : "";
   const name = str(b.name, 60);
   if (!name) return { ok: false, message: "주문서 이름을 적어 주세요." };
+  const supplier = (SUPPLIERS as readonly string[]).includes(String(b.supplier)) ? (b.supplier as Supplier) : null;
+  if (!supplier) return { ok: false, message: "업체(국내·호게나르드·HBM)를 골라 주세요." };
+  const other = lines.value.find((l) => supplierOfGroup(l.group) !== supplier);
+  if (other) return { ok: false, message: `${SUPPLIER_INFO[supplier].label} 주문서에 다른 업체 품목(${other.kname})이 섞여 있습니다.` };
   const min = Number(b.minOrder);
   return {
     ok: true,
     value: {
-      id, name, minOrder: Number.isInteger(min) && min > 0 ? Math.min(min, 10_000_000_000) : 0,
+      id, supplier, name, minOrder: Number.isInteger(min) && min > 0 ? Math.min(min, 10_000_000_000) : 0,
       memo: typeof b.memo === "string" ? b.memo.slice(0, 1000) : "", prefill: b.prefill === true,
       basis: (PRICE_BASES as readonly string[]).includes(String(b.basis)) ? (b.basis as PriceBasis) : "base", lines: lines.value,
     },
@@ -154,6 +201,11 @@ export function readProgramInput(raw: unknown): Check<ProgramInput> {
 /** 링크가 읽는 품목JSON + 다시 고칠 때 쓸 선택 상태. 수량 0으로 고른 줄은 없다(화면이 수량으로 고른다) — 최소 1로 둔다. */
 export function programPayloads(input: ProgramInput): { items: ReturnType<typeof linkPayload>; selection: Selection } {
   const qty: Record<string, number> = {};
-  for (const l of input.lines) qty[`${l.group}:${l.id}|${l.size}`] = Math.max(1, l.qty);
-  return { items: linkPayload(input.lines, input.prefill), selection: { v: 1, basis: input.basis, prefill: input.prefill, qty } };
+  const pack: Record<string, number> = {};
+  for (const l of input.lines) {
+    const key = `${l.group}:${l.id}|${l.size}`;
+    qty[key] = Math.max(1, l.qty);
+    if (l.pack) pack[key] = l.pack;
+  }
+  return { items: linkPayload(input.lines, input.prefill), selection: { v: 1, supplier: input.supplier, basis: input.basis, prefill: input.prefill, qty, pack } };
 }

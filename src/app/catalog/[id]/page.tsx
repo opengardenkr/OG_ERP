@@ -9,7 +9,7 @@ import { ActionButton, CopyLink, DeployForm } from "@/components/order-program-a
 import { getClients } from "@/lib/airtable/clients";
 import { getProgram, type LinkDetail } from "@/lib/airtable/order-programs";
 import { quoteAirtableUrl } from "@/lib/airtable/sales";
-import { GROUP_INFO } from "@/lib/order";
+import { GROUP_INFO, SUPPLIER_INFO } from "@/lib/order";
 import { won } from "@/lib/sales";
 
 export const metadata = { title: "주문서 | 오픈가든", robots: { index: false, follow: false } };
@@ -27,8 +27,8 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   return (
     <AppShell
       title={`📁 ${p.name}`}
-      subtitle={[`품목 ${p.items.length}종`, p.min ? `최소 주문 ${won(p.min)}` : "", p.status === "보관" ? "보관함" : ""].filter(Boolean).join(" · ")}
-      action={<Link href="/catalog" className="btn text-sm">← 주문서</Link>}
+      subtitle={[p.supplier ? SUPPLIER_INFO[p.supplier].label : "업체 미정", `품목 ${p.items.length}종`, p.min ? `최소 주문 ${won(p.min)}` : "", p.status === "보관" ? "보관함" : ""].filter(Boolean).join(" · ")}
+      action={<Link href={`/catalog${p.supplier ? `?s=${p.supplier}` : ""}`} className="btn text-sm">← 주문서</Link>}
     >
       <div className="mb-3 flex flex-wrap items-start gap-2">
         {p.editable ? <Link href={`/catalog/pick?program=${p.id}`} className="btn-primary px-2.5 text-xs">품목·가격 고치기</Link> : null}
@@ -53,15 +53,16 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               <thead className="text-left text-muted">
                 <tr className="border-b border-line">
                   <th className="px-3 py-1.5 font-normal">품목</th><th className="py-1.5 pr-2 font-normal">규격</th>
-                  <th className="py-1.5 pr-2 text-right font-normal">단가</th><th className="py-1.5 pr-3 text-right font-normal">지금 재고</th>
+                  <th className="py-1.5 pr-2 text-right font-normal">단가</th><th className="py-1.5 pr-2 text-right font-normal">크레이트</th><th className="py-1.5 pr-3 text-right font-normal">지금 재고</th>
                 </tr>
               </thead>
               <tbody>
                 {p.items.flatMap((it) => it.rows.map((r, i) => (
                   <tr key={`${it.k}-${r.size}`} className="border-b border-line last:border-0">
-                    <td className="px-3 py-1.5">{i === 0 ? <><span className="text-muted">{it.group ? GROUP_INFO[it.group].label : "직접 입력"} · {it.grp}</span> {it.name}</> : null}</td>
+                    <td className="px-3 py-1.5">{i === 0 ? <><span className="text-muted">{it.group ? GROUP_INFO[it.group].label : "직접 입력"} · {it.grp}</span> {it.name}{it.latin ? <span className="block text-[11px] italic text-muted">{it.latin}</span> : null}</> : null}</td>
                     <td className="py-1.5 pr-2">{r.size}</td>
-                    <td className="py-1.5 pr-2 text-right">₩{fmt(r.price)}</td>
+                    <td className="py-1.5 pr-2 text-right">₩{fmt(r.price)}<span className="text-muted">/{it.unit || "개"}</span></td>
+                    <td className="py-1.5 pr-2 text-right">{r.pack ? <>{fmt(r.pack)}{it.unit} · ₩{fmt(r.price * r.pack)}</> : <span className="text-faint">낱개</span>}</td>
                     <td className="py-1.5 pr-3 text-right">{r.stock === null ? <span className="text-faint">표시 안 함</span> : `${typeof r.stock === "number" ? fmt(r.stock) : r.stock}${it.unit}`}</td>
                   </tr>
                 )))}

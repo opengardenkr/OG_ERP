@@ -4,7 +4,10 @@ import type { MemberName } from "@/config/users";
 import {
   createRecord, getRecord, getRecordFresh, selectRecords, selectRecordsFresh, updateRecord, updateRecords,
 } from "@/lib/airtable/client";
-import { linkUrl, newLinkId, programPayloads, type OrderGroup, type ProgramInput, type Selection } from "@/lib/order";
+import {
+  SUPPLIER_INFO, linkUrl, newLinkId, programPayloads, supplierByLabel, supplierOfGroup,
+  type OrderGroup, type ProgramInput, type Selection, type Supplier,
+} from "@/lib/order";
 import {
   deductions, isFromLink, isManagedPayload, isPickerPayload, latestRevision, mergeLines, nextQuoteNo, orderTotal, orderedLines,
   parsePayload, parseSelection, payloadKeys, quoteSummary, refreshStock, seoulParts, stockKey,
@@ -24,7 +27,7 @@ const PROGRAMS = "tblCQzs3h453k911L"; // [영업] 주문서
 const P = {
   name: "fldpkan9Y2YPm8kN9", status: "fldMyyuslFTwplwoX", items: "fldcMaKXHYYkW9ykt", selection: "fldT6jzNsuXJrfzr1",
   min: "fldC59ngAVAQ1DHRA", memo: "fldtKjMLeGZotXcTj", author: "fldV30NasryPsLfBK", note: "fldwSLvf7c38bveiL",
-  modified: "fldPOuyEaEEWba151",
+  modified: "fldPOuyEaEEWba151", supplier: "fldBjhYAiFOwXMzsA",
 } as const;
 const LINKS = "tbl93mrTsG1IsuFxQ"; // [영업] 주문 링크
 const L = {
@@ -83,7 +86,17 @@ function toLink(id: string, f: Row): LinkInfo {
 
 const LINK_FIELDS = [L.id, L.title, L.customer, L.phone, L.status, L.created, L.program, L.merged, L.items];
 const readLinks = () => selectRecords<Row>(LINKS, { fields: LINK_FIELDS, revalidate: 30, byId: true });
-const readPrograms = () => selectRecords<Row>(PROGRAMS, { fields: [P.name, P.status, P.items, P.modified], revalidate: 30, byId: true });
+const readPrograms = () => selectRecords<Row>(PROGRAMS, { fields: [P.name, P.status, P.items, P.modified, P.supplier], revalidate: 30, byId: true });
+
+/** 업체 칸이 비어 있으면(옛 줄) 품목으로 짐작한다: 라인업 그룹, 없으면 크레이트 행이 있으면 HBM. */
+function supplierOf(f: Row): Supplier | null {
+  const set = supplierByLabel(text(f[P.supplier]));
+  if (set) return set;
+  const p = parsePayload(f[P.items]);
+  const g = p?.items.find((it) => typeof it.group === "string")?.group;
+  if (g) return supplierOfGroup(g);
+  return p?.items.some((it) => it.rows.some((r) => Number.isInteger(r[4]) && (r[4] as number) > 0)) ? "hbm" : null;
+}
 
 /** 링크로 들어온 주문만 남긴다(요청사항이 `[주문 링크 ` 로 시작). */
 async function readOrders(fresh = false): Promise<(OrderInfo & { memo: string })[]> {
@@ -133,7 +146,7 @@ async function readStock(keys: string[], fresh: boolean): Promise<Map<string, nu
 /** 링크 화면에 보일 재고: 0 이하는 null(재고 표시 없음) — 주문 화면과 같은 규칙. */
 const shownStock = (m: Map<string, number | null>) => new Map([...m].map(([k, v]) => [k, v !== null && v > 0 ? v : null]));
 
-export type ProgramSummary = { id: string; name: string; status: string; items: number; links: number; orders: number; amount: number; modified: string };
+export type ProgramSummary = { id: string; supplier: Supplier | null; name: string; status: string; items: number; links: number; orders: number; amount: number; modified: string };
 
 export async function listPrograms(): Promise<Result<{ programs: ProgramSummary[]; loose: LinkInfo[] }>> {
   try {
@@ -143,7 +156,7 @@ export async function listPrograms(): Promise<Result<{ programs: ProgramSummary[
       const mine = linkInfos.filter((l) => l.program === r.id);
       const got = orders.filter((o) => mine.some((l) => isFromLink(o.memo, l.linkId)));
       return {
-        id: r.id, name: text(r.fields[P.name]) || "이름 없는 주문서", status: text(r.fields[P.status]) || "사용",
+        id: r.id, supplier: supplierOf(r.fields), name: text(r.fields[P.name]) || "이름 없는 주문서", status: text(r.fields[P.status]) || "사용",
         items: parsePayload(r.fields[P.items])?.items.length ?? 0, links: mine.length, orders: got.length,
         amount: got.reduce((a, o) => a + o.total, 0), modified: text(r.fields[P.modified]),
       };
@@ -155,12 +168,12 @@ export async function listPrograms(): Promise<Result<{ programs: ProgramSummary[
   }
 }
 
-export type ProgramItem = { k: string; group: OrderGroup | ""; rec: string; grp: string; name: string; unit: string; rows: { size: string; price: number; prefill: number; stock: number | string | null }[] };
+export type ProgramItem = { k: string; group: OrderGroup | ""; rec: string; grp: string; name: string; latin: string; unit: string; rows: { size: string; price: number; prefill: number; stock: number | string | null; pack: number }[] };
 export type LinkDetail = LinkInfo & {
   orders: OrderInfo[]; amount: number;
   quote: { id: string; number: string; status: string; total: number; deducted: string; canDeduct: boolean } | null;
 };
-export type ProgramDetail = { id: string; name: string; status: string; min: number; memo: string; note: string; editable: boolean; items: ProgramItem[]; links: LinkDetail[] };
+export type ProgramDetail = { id: string; supplier: Supplier | null; name: string; status: string; min: number; memo: string; note: string; editable: boolean; items: ProgramItem[]; links: LinkDetail[] };
 
 export async function getProgram(id: string): Promise<Result<ProgramDetail | null>> {
   if (!REC.test(id)) return ok(null);
@@ -173,9 +186,9 @@ export async function getProgram(id: string): Promise<Result<ProgramDetail | nul
     const live = shownStock(stock);
     // 손으로 만든 주문서는 재고 칸에 "9,360+" 같은 글자가 들어 있기도 하다 — 그대로 보여 준다
     const items: ProgramItem[] = payload.items.map((it) => ({
-      k: it.k, group: it.group ?? "", rec: it.rec ?? "", grp: it.grp, name: it.name, unit: String(it.unit ?? ""),
+      k: it.k, group: it.group ?? "", rec: it.rec ?? "", grp: it.grp, name: it.name, latin: String(it.latin ?? ""), unit: String(it.unit ?? ""),
       rows: it.rows.map((r) => ({
-        size: String(r[0]), price: Number(r[2]) || 0, prefill: Number(r[3]) || 0,
+        size: String(r[0]), price: Number(r[2]) || 0, prefill: Number(r[3]) || 0, pack: Number.isInteger(r[4]) ? (r[4] as number) : 0,
         stock: live.has(stockKey(it.group, it.rec)) ? live.get(stockKey(it.group, it.rec))! : typeof r[1] === "number" || typeof r[1] === "string" ? r[1] : null,
       })),
     }));
@@ -190,7 +203,7 @@ export async function getProgram(id: string): Promise<Result<ProgramDetail | nul
         };
       });
     return ok({
-      id, name: text(f[P.name]) || "이름 없는 주문서", status: text(f[P.status]) || "사용", min: num(f[P.min]),
+      id, supplier: supplierOf(f), name: text(f[P.name]) || "이름 없는 주문서", status: text(f[P.status]) || "사용", min: num(f[P.min]),
       memo: text(f[P.memo]), note: text(f[P.note]), editable: payload.items.length === 0 || isPickerPayload(payload), items, links: mine,
     });
   } catch (e) {
@@ -199,14 +212,14 @@ export async function getProgram(id: string): Promise<Result<ProgramDetail | nul
 }
 
 /** 주문 화면에서 다시 고칠 때: 이름·조건·선택 상태 */
-export async function getProgramSelection(id: string): Promise<{ name: string; minOrder: number; memo: string; selection: Selection | null; editable: boolean } | null> {
+export async function getProgramSelection(id: string): Promise<{ name: string; supplier: Supplier | null; minOrder: number; memo: string; selection: Selection | null; editable: boolean } | null> {
   if (!REC.test(id)) return null;
   const rec = await getRecordFresh<Row>(PROGRAMS, id, true);
   if (!rec) return null;
   const f = rec.fields as Row;
   const payload = parsePayload(f[P.items]);
   return {
-    name: text(f[P.name]), minOrder: num(f[P.min]), memo: text(f[P.memo]), selection: parseSelection(f[P.selection]),
+    name: text(f[P.name]), supplier: supplierOf(f), minOrder: num(f[P.min]), memo: text(f[P.memo]), selection: parseSelection(f[P.selection]),
     editable: !payload?.items.length || isPickerPayload(payload),
   };
 }
@@ -237,7 +250,7 @@ export async function saveProgram(input: ProgramInput, author: MemberName): Prom
   const fresh = refreshStock(items as LinkPayload, shownStock(await readStock(payloadKeys(items as LinkPayload), true)));
   const fields = {
     [P.name]: input.name, [P.items]: JSON.stringify(fresh), [P.selection]: JSON.stringify(selection),
-    [P.min]: input.minOrder || null, [P.memo]: input.memo || null,
+    [P.min]: input.minOrder || null, [P.memo]: input.memo || null, [P.supplier]: SUPPLIER_INFO[input.supplier].label,
   };
   if (!input.id) {
     const rec = await createRecord<Row>(PROGRAMS, { ...fields, [P.status]: "사용", [P.author]: author });
@@ -442,8 +455,10 @@ export async function adoptLink(linkRecId: string, who: MemberName): Promise<Res
     if (ids(f[L.program]).length) return fail("이미 주문서에 묶인 링크입니다.");
     const raw = text(f[L.items]);
     if (!parsePayload(raw)) return fail("링크 품목을 읽지 못했습니다.");
+    const guess = supplierOf({ [P.items]: raw });
     const rec = await createRecord<Row>(PROGRAMS, {
       [P.name]: text(f[L.title]) || "옮겨 온 주문서", [P.status]: "사용", [P.items]: raw, [P.min]: num(f[L.min]) || null,
+      [P.supplier]: guess ? SUPPLIER_INFO[guess].label : null,
       [P.memo]: text(f[L.memo]) || null, [P.author]: who, [P.note]: `${today()} 주문 링크 ${text(f[L.id])}에서 옮김`,
     });
     await updateRecord<Row>(LINKS, linkRecId, { [L.program]: [rec.id] });
