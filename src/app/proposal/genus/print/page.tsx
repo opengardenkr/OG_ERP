@@ -14,11 +14,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   return (
     <div className="gp-print-root gp-root">
       <div className="gp-toolbar">
-        <span><b>{title}</b> <Link href={`/proposal/genus?${toQuery(params)}`}>← 조건 바꾸기</Link></span>
+        <span><b>{title}</b> <Link href={`/proposal?${toQuery(params)}`}>← 조건 바꾸기</Link></span>
         {result?.ok && result.data.cards.length ? <PrintButton /> : null}
       </div>
       {result === null ? (
-        <div className="p-6"><EmptyState message="속명이 없습니다. 속명 제안서 화면에서 다시 여세요." /></div>
+        <div className="p-6"><EmptyState message="속명이 없습니다. 제안서 화면에서 다시 여세요." /></div>
       ) : !result.ok ? (
         <div className="p-6"><ErrorState message={result.message} /></div>
       ) : result.data.cards.length === 0 ? (

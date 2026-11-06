@@ -23,7 +23,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   const member = session?.user.member ?? null;
   const today = todayInSeoul();
 
-  // 대시보드 달력은 이번 주와 다음 주까지만. 더 멀리는 일정 화면에서 본다.
+  // 대시보드 달력은 이번 주와 다음 주까지만. 일정 화면은 없앴다(2026-11-06) — 일정은 여기서 보고 등록한다.
   const { w } = await searchParams;
   const nextWeek = w === "next";
   const days = weekDays(nextWeek ? addDays(today, 7) : today);
@@ -86,10 +86,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                 </Link>
               </div>
               <ComposeButton className="btn px-2 py-1 text-xs">+ 일정</ComposeButton>
-              {/* 폰에서는 자리가 모자라다. 일정 화면은 메뉴로 간다 */}
-              <Link href="/calendar" className="hidden text-xs text-muted hover:text-ink sm:inline">
-                달력 보기 →
-              </Link>
             </div>
           }
         >
