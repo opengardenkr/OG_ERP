@@ -229,7 +229,11 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
         </div>
         <div className="order-1 flex min-h-[55dvh] flex-col overflow-hidden rounded-lg border border-line bg-white">
           <div className="relative min-h-[330px] flex-1">
-            <div ref={container} className="absolute inset-0" aria-label="네이버 지도" />
+            {/* 네이버 SDK가 지도 칸에 position:relative를 직접 박는다. 지도 칸에 absolute를 주면
+                덮어써져 높이가 0이 되므로(2026-11-06 실제 발생), 감싸는 칸이 크기를 잡는다. */}
+            <div className="absolute inset-0">
+              <div ref={container} className="h-full w-full" aria-label="네이버 지도" />
+            </div>
             {!mapReady && <div className="absolute inset-0 flex items-center justify-center bg-canvas text-center text-sm text-muted">네이버 지도 인증 후 이곳에 거래처와 지자체 위치가 표시됩니다.</div>}
           </div>
           {selected ? <div className="border-t border-line p-3 text-sm">
