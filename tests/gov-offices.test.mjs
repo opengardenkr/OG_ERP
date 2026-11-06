@@ -75,3 +75,15 @@ test('"해운대구" is Busan, not Daegu; "광역시청" still matches its city 
   assert.equal(matchOffice(record('부산 해운대구청', '6층'), all)?.id, 'erp_haeundae');
   assert.equal(matchOffice(record('울산광역시청', '1층 태화강국가정원과'), all)?.id, 'erp_ulsan_city');
 });
+
+test('department text is the second clue: a booth visitor from 경기도의회 met in 양평', async () => {
+  const { EXTRA_GOV_OFFICES } = await import('../src/lib/gov-offices-extra.ts');
+  const { mergeOffices, matchRecord } = await import('../src/lib/gov-offices.ts');
+  const all = mergeOffices(offices, EXTRA_GOV_OFFICES);
+  assert.equal(matchRecord(record('양평', '경기도의회 건설교통위원회', '경기'), all)?.id, 'erp_ggc');
+  assert.equal(matchRecord(record('고성군 농업기술센터', '공원녹지과'), all)?.id, 'erp_goseong_atc');
+  assert.equal(matchRecord(record('거제 농업기술센터', '1층 농업지원과'), all)?.id, 'erp_geoje_atc');
+  assert.equal(matchRecord(record('아산문화공원 관리사무소', '2층 공원관리과 도시녹화팀', '충청남도'), all)?.id, 'erp_asan_park');
+  // 지역관할로 찾으면 부서 칸은 보지 않는다.
+  assert.equal(matchRecord(record('서울 용산구청', '경기도의회 협의'), all)?.id, 'yongsan');
+});

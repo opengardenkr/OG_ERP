@@ -1,6 +1,6 @@
 import "server-only";
 import { extractAddress } from "@/lib/sales-map-address";
-import { matchOffice, mergeOffices, officeLocation, streetAddress, type Position } from "@/lib/gov-offices";
+import { matchRecord, mergeOffices, officeLocation, streetAddress, type Position } from "@/lib/gov-offices";
 import { EXTRA_GOV_OFFICES } from "@/lib/gov-offices-extra";
 import { getGovOffices } from "@/lib/gov-map/offices";
 
@@ -107,7 +107,7 @@ export async function getSalesMapItems(): Promise<SalesMapItem[]> {
     // 1) 기록에 적힌 도로명·지번 주소 2) 관공서 지도의 같은 기관 주소.
     // 둘 다 없으면 대략위치로 두고 핀을 찍지 않는다 — 관할 이름만으로 아무 데나 찍지 않는다.
     const written = extractAddress(location) || extractAddress(jurisdiction);
-    const office = written ? null : matchOffice({ region: cleaned(f.지역), jurisdiction, location }, offices);
+    const office = written ? null : matchRecord({ region: cleaned(f.지역), jurisdiction, location }, offices);
     const place = office ? officeLocation(office, location) : null;
     return {
       id,

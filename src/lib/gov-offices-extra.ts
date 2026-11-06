@@ -2,7 +2,7 @@ import type { GovOffice } from "@/lib/gov-offices";
 
 /**
  * 관공서 영업 지도(map.open-garden.co.kr)가 아직 다루지 않는 지방 기관.
- * 영업일지에 기록이 있는데 핀이 안 뜨던 곳만 넣었다(2026-11-06).
+ * 영업일지에 기록이 있는데 핀이 안 뜨던 곳만 넣었다(2026-11-06, 21곳).
  *
  * - 주소는 공식 청사 주소. 네이버 지도 주소 검색 결과에 같은 건물 이름(예: "진주시청")이
  *   붙어 나오는 것으로 확인했다. 좌표는 그때 받은 값이며, 주소 검색이 실패할 때만 쓴다.
@@ -34,6 +34,11 @@ export const EXTRA_GOV_OFFICES: GovOffice[] = [
   { id: "erp_asan_park", name: "아산 미래도시관리사업소 공원관리과", sido: "충남", address: "충남 아산시 권곡동 448-228", position: { lat: 36.79146, lng: 127.00612 }, match: ["아산문화공원", "미래도시관리사업소"], departments: [] },
   { id: "erp_ansan", name: "안산시청", sido: "경기", address: "경기 안산시 단원구 화랑로 387", position: { lat: 37.32187, lng: 126.83081 }, match: ["안산시청"], departments: [] },
   { id: "erp_danwon", name: "안산 단원구청", sido: "경기", address: "경기 안산시 단원구 화랑로 250", position: { lat: 37.32102, lng: 126.81526 }, match: ["단원구청"], departments: [] },
+  // 농업기술센터: 주소는 고성군 신청사 이전 기사(경남일보 2014-10-24)·거제시농업기술센터 홈페이지 하단.
+  { id: "erp_goseong_atc", name: "고성군농업기술센터", sido: "경남", address: "경남 고성군 고성읍 남해안대로 2829-60", position: { lat: 34.99599, lng: 128.32579 }, match: ["고성군농업기술센터"], departments: [] },
+  { id: "erp_geoje_atc", name: "거제시농업기술센터", sido: "경남", address: "경남 거제시 거제면 거제남서로 3567", position: { lat: 34.8562, lng: 128.58167 }, match: ["거제농업기술센터", "거제시농업기술센터"], departments: [] },
+  // 경기정원박람회 부스에 찾아온 경기도의회 건설교통위원회. 핀은 방문할 곳(경기도의회)에 찍는다. 주소는 경기도의회 홈페이지 하단.
+  { id: "erp_ggc", name: "경기도의회", sido: "경기", address: "경기 수원시 영통구 도청로 32", position: { lat: 37.28887, lng: 127.0542 }, match: ["경기도의회"], departments: [] },
   // 영업일지에 "포천"으로만 적힌 기록용. 관공서 지도의 포천시청과 같은 건물이다.
   { id: "erp_pocheon", name: "포천시청", sido: "경기", address: "경기 포천시 중앙로 87", position: { lat: 37.89487, lng: 127.20024 }, match: ["포천"], departments: [] },
 ];

@@ -53,6 +53,16 @@ export function matchOffice(record: GovRecordText, offices: GovOffice[]): GovOff
   return candidates[0]?.office ?? null;
 }
 
+/**
+ * 영업일지 한 건의 기관. `지역관할`로 먼저 찾고, 못 찾으면 `부서 및 위치`로 한 번 더 찾는다.
+ * 예: 지역관할 "양평"(만난 장소) + 부서 및 위치 "경기도의회 건설교통위원회"(상대 기관) → 경기도의회.
+ * 두 번째 단계는 ERP에만 있다(관공서 지도 원본 규칙은 지역관할만 본다).
+ */
+export function matchRecord(record: GovRecordText, offices: GovOffice[]): GovOffice | null {
+  return matchOffice(record, offices)
+    ?? (record.location ? matchOffice({ region: record.region, jurisdiction: record.location, location: "" }, offices) : null);
+}
+
 /** "서울 강북구 도봉로 358 (코스타타워)" → "서울 강북구 도봉로 358". 괄호 안 건물명은 주소 검색을 방해한다. */
 export const streetAddress = (address: string) => address.replace(/\s*\([^)]*\)/g, "").trim();
 
