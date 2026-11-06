@@ -9,6 +9,7 @@ const ITEMS = [
   { href: "/quote", label: "견적서" },
   { href: "/catalog", label: "주문" },
   { href: "/catalog/manage", label: "품종 관리" },
+  { href: "/clients", label: "거래처" },
   { href: "/sales-map", label: "영업 지도" },
   { href: "/updates", label: "업데이트" },
 ] as const;

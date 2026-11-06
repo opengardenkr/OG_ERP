@@ -22,6 +22,7 @@
 견적서    /quote
 주문      /catalog
 품종 관리 /catalog/manage   ← 옛 '현장 빠른등록'(/catalog/quick)을 합쳤다
+거래처    /clients          ← 연락처·명함·영업일지. 상세 /clients/[id]
 영업 지도 /sales-map
 업데이트  /updates
 ```

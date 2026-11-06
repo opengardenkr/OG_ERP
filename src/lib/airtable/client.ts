@@ -26,6 +26,8 @@ type Query = {
   maxRecords?: number;
   /** 초 단위 캐시. 새로고침마다 전체 읽기 금지. */
   revalidate: number;
+  /** true면 fields[]에 필드 ID를 넣고 결과도 필드 ID로 받는다. 이름 앞에 BOM이 붙은 표가 있어 새 코드는 이쪽을 쓴다. */
+  byId?: boolean;
 };
 
 export class AirtableError extends Error {}
@@ -85,6 +87,7 @@ async function fetchAll<F>(
       params.set(`sort[${i}][direction]`, s.direction);
     });
     if (query.maxRecords) params.set("maxRecords", String(query.maxRecords));
+    if (query.byId) params.set("returnFieldsByFieldId", "true");
     if (offset) params.set("offset", offset);
 
     const response = await fetch(`${API}/${baseId}/${tableId}?${params}`, {
