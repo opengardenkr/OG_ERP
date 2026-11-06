@@ -39,6 +39,12 @@ function loadMapScript(id: string): Promise<void> {
   mapScriptPromise = new Promise((resolve, reject) => {
     const callbackName = "OG_NAVER_MAPS_SALES_READY";
     const timer = window.setTimeout(() => reject(new Error("지도 응답 시간이 초과되었습니다")), 20000);
+    // 키가 틀렸거나 이 주소가 네이버 콘솔에 등록되지 않았으면 SDK가 이 함수를 부른다.
+    (window as any).navermap_authFailure = () => {
+      window.clearTimeout(timer);
+      window.dispatchEvent(new CustomEvent("og-naver-auth-failure"));
+      reject(new Error(`네이버 지도 인증에 실패했습니다. 네이버 클라우드 콘솔 → Maps → Application의 Web 서비스 URL에 ${window.location.origin} 이 있는지, Vercel의 NAVER_MAP_KEY_ID가 그 앱의 Client ID인지 확인해 주세요.`));
+    };
     (window as any)[callbackName] = () => {
       window.clearTimeout(timer);
       if (getNaver()?.maps?.Map && getNaver()?.maps?.Service) resolve();
@@ -89,6 +95,13 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
   const missing = rows.filter(item => !item.geocodeQuery).length;
 
   useEffect(() => {
+    // 인증 실패는 지도를 이미 그린 뒤에 올 수도 있다.
+    const onAuthFailure = () => setMapProblem(`네이버 지도 인증에 실패했습니다. 네이버 클라우드 콘솔의 Web 서비스 URL에 ${window.location.origin} 이 있는지, NAVER_MAP_KEY_ID가 맞는지 확인해 주세요.`);
+    window.addEventListener("og-naver-auth-failure", onAuthFailure);
+    return () => window.removeEventListener("og-naver-auth-failure", onAuthFailure);
+  }, []);
+
+  useEffect(() => {
     if (!naverMapClientId) return;
     let active = true;
     loadMapScript(naverMapClientId).then(() => {
@@ -124,7 +137,9 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
       const next: Record<string, Position | null> = {};
       for (const item of rows) {
         if (item.geocodeQuery && Object.prototype.hasOwnProperty.call(cache, item.geocodeQuery)) {
-          next[item.id] = cache[item.geocodeQuery];
+          next[item.id] = cache[item.geocodeQuery] ?? item.fallback;
+        } else if (!item.geocodeQuery && item.fallback) {
+          next[item.id] = item.fallback;
         }
       }
       setLocations(previous => ({ ...previous, ...next }));
@@ -139,7 +154,8 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
           const pos = await findLocation(item.geocodeQuery);
           if (cancelled) return;
           cache[item.geocodeQuery] = pos;
-          setLocations(previous => ({ ...previous, [item.id]: pos }));
+          // 주소 검색이 실패하면 관공서 지도의 기관 좌표(대략값)를 쓴다.
+          setLocations(previous => ({ ...previous, [item.id]: pos ?? item.fallback }));
           saveCache(cache);
           await new Promise(r => setTimeout(r, 250));
         }
@@ -220,6 +236,7 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
             <div className="flex items-center justify-between gap-2"><strong>{selected.name}</strong><span className="text-xs text-muted">{selected.category}</span></div>
             <p className="mt-1 text-muted">{selected.address || "주소 미등록"}{selected.approximate ? " (대략 위치)" : ""}</p>
             {selected.contact && <p className="mt-1">담당자·연락처: {selected.contact}</p>}
+            {selected.office && <p className="mt-1 text-xs text-muted">관공서 지도 기관: {selected.office}</p>}
             {selected.kind === "government" && selected.lastVisit && <p className="mt-1">방문일: {selected.lastVisit}</p>}
             {selected.kind === "partner" && <p className="mt-1">연결된 영업 기록: {selected.activityCount}건</p>}
             {selected.notes && <p className="mt-1 whitespace-pre-wrap text-muted">{selected.notes}</p>}
@@ -231,7 +248,7 @@ export function SalesMapClient({ entries, naverMapClientId, warning }: Props) {
         </div>
       </div>
       <SalesRoutePlanner entries={rows} positions={locations} onFocus={setSelectedId} />
-      <p className="text-xs text-muted">주소가 없거나 검색되지 않은 기록은 지도에 억지로 표시하지 않습니다. 관공서의 관할 지역만 있고 상세 주소가 없으면 핀을 표시하지 않습니다. 위치 확인 결과는 직원의 브라우저 세션에만 보관됩니다.</p>
+      <p className="text-xs text-muted">주소가 없거나 검색되지 않은 기록은 지도에 억지로 표시하지 않습니다. 관공서는 기록에 주소가 있거나, 관공서 영업 지도에 같은 기관이 있을 때만 핀을 표시합니다. 위치 확인 결과는 직원의 브라우저 세션에만 보관됩니다.</p>
     </div>
   );
 }

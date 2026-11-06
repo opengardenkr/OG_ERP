@@ -21,7 +21,7 @@ ERP는 **Vercel 위의 Next.js 앱**이고, 상시 켜진 서버가 아니다.
 | 세션 | JWT 쿠키. **쿠키 도메인을 지정하지 않았다** → ERP 주소에서만 유효 |
 | 접근 통제 | `src/proxy.ts`가 로그인 화면·인증 경로를 뺀 **모든 경로**를 막는다(`public/` 정적 파일 포함) |
 | 데이터 | Airtable 베이스 `appzLstFHtHcQlWSu`. 토큰은 서버에서만 쓴다 |
-| 외부 호출 | `api.airtable.com`, `www.googleapis.com`(캘린더), `oauth2.googleapis.com` |
+| 외부 호출 | `api.airtable.com`, `www.googleapis.com`(캘린더), `oauth2.googleapis.com`, `map.open-garden.co.kr/data/offices.json`(영업 지도의 관공서 위치, 키 없음) |
 | 자체 DB | 없다. Airtable이 유일한 원천 |
 
 ## 상시 켜진 서버가 아니라는 뜻

@@ -382,7 +382,15 @@ HANDOFF.md보다 이 파일이 최신이다.
 - 탭 아이콘을 로고 마크(흰색, 초록 `brand-600` 바탕)로 교체. `favicon.ico`·`icon.png`·`apple-icon.png`.
   로그인 화면에서도 보이도록 `proxy.ts`가 세 파일을 막지 않는다. (검정 마크는 어두운 탭에서 안 보여 버렸다)
 - 영업 지도 네이버 키를 관공서 지도와 같은 이름(`NAVER_MAP_KEY_ID`)으로도 받는다.
-  지도가 뜨려면 네이버 콘솔 Web 서비스 URL에 `https://app.open-garden.co.kr`이 있어야 한다.
+  지도가 뜨려면 네이버 콘솔 Web 서비스 URL에 `https://app.open-garden.co.kr`이 있어야 한다(같은 날 등록 완료,
+  gov-map 앱). 인증이 실패하면 화면이 무엇을 확인할지 알려준다(`navermap_authFailure`).
+- 영업 지도의 관공서 핀: 기록에 주소가 없으면 **관공서 영업 지도의 기관 목록**
+  (`https://map.open-garden.co.kr/data/offices.json`, 공개 정적 파일)에서 같은 기관을 찾아 그 주소로 핀을 찍는다.
+  매칭 규칙은 gov-map `js/visits-match.js`와 같다(`src/lib/gov-offices.ts`, 테스트 있음). 부서가 별관 등 다른
+  건물이면 부서 주소를 쓴다. 기관 목록은 복사하지 않고 서버가 읽어 성공만 6시간 캐시한다
+  (`src/lib/gov-map/offices.ts`). 읽기에 실패하면 관공서 핀만 줄고 화면은 그대로다.
+  2026-11-06 기준 영업일지 44건 중 19건에 핀이 생긴다. 나머지는 관공서 지도 조사 범위(서울·경기북부) 밖이라
+  "상세 주소 미확인"으로 목록에만 남는다 — 관공서 지도에 기관이 추가되면 배포 없이 핀이 늘어난다.
 
 2026-10-30
 - 메뉴 '카탈로그 선택' → **'주문'**(`/catalog`, `public/tools/order.html`). 고객 카톡방용 주문형 제안서와 같은

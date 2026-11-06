@@ -1,5 +1,7 @@
 import "server-only";
-import { looksLikeAddress } from "@/lib/sales-map-address";
+import { extractAddress } from "@/lib/sales-map-address";
+import { matchOffice, officeLocation, streetAddress, type Position } from "@/lib/gov-offices";
+import { getGovOffices } from "@/lib/gov-map/offices";
 
 import { selectRecords } from "@/lib/airtable/client";
 
@@ -13,6 +15,10 @@ export type SalesMapItem = {
   name: string;
   address: string;
   geocodeQuery: string;
+  /** 주소 검색이 실패했을 때 쓸 좌표(관공서 지도의 기관 좌표). 없으면 핀을 찍지 않는다. */
+  fallback: Position | null;
+  /** 관공서 영업 지도에서 맞춘 기관 이름. 못 맞췄으면 빈 문자열. */
+  office: string;
   approximate: boolean;
   detail: string;
   category: string;
@@ -59,7 +65,7 @@ function cleaned(value: unknown): string {
 // 주소가 아닌 '조경과 2층' 같은 기록에 핀을 임의로 찍지 않는다.
 
 export async function getSalesMapItems(): Promise<SalesMapItem[]> {
-  const [partners, governments] = await Promise.all([
+  const [partners, governments, offices] = await Promise.all([
     selectRecords<PartnerRow>(PARTNERS, {
       fields: ["거래처명", "주소", "거래처_구분", "대표자명", "연락처", "영업 일지", "제안 이력", "비고"],
       revalidate: 300,
@@ -68,6 +74,7 @@ export async function getSalesMapItems(): Promise<SalesMapItem[]> {
       fields: ["지역", "지역관할", "부서 및 위치", "날짜", "담당자", "반응", "리뷰", "비고"],
       revalidate: 300,
     }),
+    getGovOffices(),
   ]);
 
   const businessItems = partners.map(({ id, fields: f }) => {
@@ -77,7 +84,9 @@ export async function getSalesMapItems(): Promise<SalesMapItem[]> {
       kind: "partner" as const,
       name: cleaned(f.거래처명) || "이름 미등록 거래처",
       address,
-      geocodeQuery: address,
+      geocodeQuery: extractAddress(address) || streetAddress(address),
+      fallback: null,
+      office: "",
       approximate: false,
       detail: cleaned(f.대표자명),
       category: cleaned(f.거래처_구분) || "미분류",
@@ -90,16 +99,22 @@ export async function getSalesMapItems(): Promise<SalesMapItem[]> {
 
   const govItems = governments.map(({ id, fields: f }) => {
     const location = cleaned(f["부서 및 위치"]);
-    const region = [cleaned(f.지역), cleaned(f.지역관할)].filter(Boolean).join(" ");
-    // 관할 지역만 있을 때는 대략위치로 분류하고 상세 주소라고 주장하지 않는다.
-    const fullAddress = looksLikeAddress(location) ? location : "";
+    const jurisdiction = cleaned(f.지역관할);
+    const region = [cleaned(f.지역), jurisdiction].filter(Boolean).join(" ");
+    // 1) 기록에 적힌 도로명·지번 주소 2) 관공서 지도의 같은 기관 주소.
+    // 둘 다 없으면 대략위치로 두고 핀을 찍지 않는다 — 관할 이름만으로 아무 데나 찍지 않는다.
+    const written = extractAddress(location) || extractAddress(jurisdiction);
+    const office = written ? null : matchOffice({ region: cleaned(f.지역), jurisdiction, location }, offices);
+    const place = office ? officeLocation(office, location) : null;
     return {
       id,
       kind: "government" as const,
-      name: cleaned(f.지역관할) || cleaned(f.지역) || "지역 미등록",
-      address: fullAddress || region,
-      geocodeQuery: fullAddress,
-      approximate: !fullAddress,
+      name: jurisdiction || cleaned(f.지역) || "지역 미등록",
+      address: written || place?.address || region,
+      geocodeQuery: written || place?.query || "",
+      fallback: place?.fallback ?? null,
+      office: office?.name ?? "",
+      approximate: !written && !place,
       detail: location,
       category: cleaned(f.반응) || "미분류",
       lastVisit: cleaned(f.날짜),
