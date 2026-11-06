@@ -183,7 +183,9 @@ export async function getProgram(id: string): Promise<Result<ProgramDetail | nul
     if (!rec) return ok(null);
     const f = rec.fields as Row;
     const payload = parsePayload(f[P.items]) ?? { v: 1 as const, items: [] };
-    const [links, orders, quotes, stock] = await Promise.all([readLinks(), readOrders(), readQuoteList(), readStock(payloadKeys(payload), false)]);
+    // 손으로 만든 주문서(사진·크레이트·"9,360+" 같은 재고 글자)는 적힌 재고를 그대로 둔다 — 라인업 재고 칸이 비어 있어 덮으면 사라진다
+    const picker = isPickerPayload(payload);
+    const [links, orders, quotes, stock] = await Promise.all([readLinks(), readOrders(), readQuoteList(), picker ? readStock(payloadKeys(payload), false) : Promise.resolve(new Map<string, number | null>())]);
     const live = shownStock(stock);
     // 손으로 만든 주문서는 재고 칸에 "9,360+" 같은 글자가 들어 있기도 하다 — 그대로 보여 준다
     const items: ProgramItem[] = payload.items.map((it) => ({
@@ -274,6 +276,7 @@ export async function refreshProgram(programId: string): Promise<Result<number>>
     const rec = await getRecordFresh<Row>(PROGRAMS, programId, true);
     const payload = rec ? parsePayload((rec.fields as Row)[P.items]) : null;
     if (!rec || !payload) return fail("주문서를 찾지 못했습니다.");
+    if (!isPickerPayload(payload)) return ok(0); // 손으로 만든·공동수입 주문서는 재고를 적힌 대로 둔다
     const fresh = refreshStock(payload, shownStock(await readStock(payloadKeys(payload), true)));
     await updateRecord<Row>(PROGRAMS, programId, { [P.items]: JSON.stringify(fresh) });
     return ok(await syncLinks(programId, fresh));
@@ -306,8 +309,8 @@ export async function deployLink(programId: string, input: { customer: string; p
     const rec = await getRecordFresh<Row>(PROGRAMS, programId, true);
     const f = (rec?.fields ?? {}) as Row;
     const payload = parsePayload(f[P.items]);
-    if (!rec || (!payload?.items.length && !payload?.src)) return fail("주문서에 품목이 없습니다. [품목 고치기]에서 먼저 고르세요.");
-    const fresh = refreshStock(payload, shownStock(await readStock(payloadKeys(payload), true)));
+    if (!rec || !payload || (!payload.items.length && !payload.src)) return fail("주문서에 품목이 없습니다. [품목 고치기]에서 먼저 고르세요.");
+    const fresh = isPickerPayload(payload) ? refreshStock(payload, shownStock(await readStock(payloadKeys(payload), true))) : payload;
     const id = newLinkId();
     await createRecord<Row>(LINKS, {
       [L.id]: id, [L.title]: input.title || `${input.customer ? input.customer + " " : ""}${text(f[P.name])}`.slice(0, 60),

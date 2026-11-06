@@ -28,20 +28,20 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   return (
     <AppShell
       title={`📁 ${p.name}`}
-      subtitle={[p.supplier ? SUPPLIER_INFO[p.supplier].label : "업체 미정", `품목 ${p.items.length}종`, p.min ? `최소 주문 ${won(p.min)}` : "", p.status === "보관" ? "보관함" : ""].filter(Boolean).join(" · ")}
+      subtitle={[p.supplier ? SUPPLIER_INFO[p.supplier].label : "업체 미정", p.source ? "품목 웹에서 읽음" : `품목 ${p.items.length}종`, p.min ? `최소 주문 ${won(p.min)}` : "", p.status === "보관" ? "보관함" : ""].filter(Boolean).join(" · ")}
       action={<Link href="/catalog" className="btn text-sm">← 주문프로그램</Link>}
     >
       <OrderTabs active="주문프로그램" />
       <div className="mb-3 flex flex-wrap items-start gap-2">
         {p.editable ? <Link href={`/catalog/pick?program=${p.id}`} className="btn-primary px-2.5 text-xs">품목·가격 고치기</Link> : null}
-        <ActionButton action={refreshStockAction} fields={{ program: p.id }} label="재고 반영" />
+        {p.editable ? <ActionButton action={refreshStockAction} fields={{ program: p.id }} label="재고 반영" /> : null}
         <ActionButton action={programStatusAction} fields={{ program: p.id, status: p.status === "보관" ? "사용" : "보관" }} label={p.status === "보관" ? "다시 꺼내기" : "보관"} />
       </div>
       {p.memo ? <p className="card mb-3 whitespace-pre-wrap p-3 text-xs text-muted">{p.memo.replace(/\*\*/g, "")}</p> : null}
       {p.source === "hg-pool" ? (
         <p className="mb-3 text-xs text-faint">공동수입 주문서 — 고객 화면의 품목은 웹사이트가 호게나르드 DM에서 <b>공동주문</b>에 체크한 줄을 바로 읽습니다. 품목은 DM에서 고르고, 여기서는 회사 배포·받은 주문·합산 견적을 봅니다.</p>
       ) : !p.editable ? (
-        <p className="mb-3 text-xs text-faint">사진·크레이트·설명을 손으로 넣어 만든 주문서라 품목 고르기 화면에서는 고치지 않습니다(그 정보가 사라집니다). 재고 반영·회사 배포·합산 견적·재고 차감은 됩니다.</p>
+        <p className="mb-3 text-xs text-faint">사진·크레이트·설명을 손으로 넣어 만든 주문서라 품목 고르기 화면에서는 고치지 않습니다(그 정보가 사라집니다). 재고도 적힌 대로 둡니다. 회사 배포·합산 견적·재고 차감은 됩니다.</p>
       ) : null}
 
       <Section title={`배포한 회사 ${p.links.length}곳`}>
@@ -75,7 +75,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           </div>
         ) : <EmptyState message={p.source ? "품목은 웹사이트가 직접 읽습니다(위 안내)." : "품목이 없습니다. [품목·가격 고치기]에서 고르세요."} />}
         <p className="mt-1.5 text-xs text-faint">
-          재고는 라인업 표에서 지금 읽은 값입니다. 고객 링크는 [재고 반영]·품목 저장·재고 차감 때 이 값으로 바뀝니다.
+          {p.editable ? "재고는 라인업 표에서 지금 읽은 값입니다. 고객 링크는 [재고 반영]·품목 저장·재고 차감 때 이 값으로 바뀝니다." : "재고는 주문서에 적힌 값입니다."}
         </p>
       </Section>
     </AppShell>
