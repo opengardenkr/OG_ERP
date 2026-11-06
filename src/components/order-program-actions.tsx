@@ -78,8 +78,8 @@ const fmt = (n: number) => n.toLocaleString("ko-KR");
  * 주문 뒤 카톡·전화로 바뀐 내용 고치기. 그 회사 견적의 품목·수량·단가를 고치고 무엇이 바뀌었는지 한 줄 남긴다.
  * 견적이 아직 '작성'이면 그대로 고치고, 이미 보냈으면 수정본(-R2…)이 생긴다 — 서버가 정한다.
  */
-export function OrderEditor({ link, lines, options, sent }: {
-  link: string; lines: EditLine[]; options: { name: string; spec: string; price: number }[]; sent: boolean;
+export function OrderEditor({ program, customer, lines, options, sent }: {
+  program: string; customer: string; lines: EditLine[]; options: { name: string; spec: string; price: number }[]; sent: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<Row[]>(() => lines.map((l, i) => ({ ...l, key: i })));
@@ -106,7 +106,8 @@ export function OrderEditor({ link, lines, options, sent }: {
 
   return (
     <form action={run} data-og-saving={pending ? "true" : undefined} className="mt-2 w-full space-y-2 rounded border border-line bg-canvas p-2">
-      <input type="hidden" name="link" value={link} />
+      <input type="hidden" name="program" value={program} />
+      <input type="hidden" name="customer" value={customer} />
       <input type="hidden" name="lines" value={JSON.stringify(rows.map(({ name, spec, qty, price }) => ({ name, spec, qty: Number(qty) || 0, price: Number(price) || 0 })))} />
       <p className="text-xs text-muted">{sent ? "이미 보낸 견적이라 저장하면 수정본(-R…)이 새로 생깁니다. 고객에게 다시 보내 주세요." : "아직 보내지 않은 견적이라 그대로 고칩니다."} 수량 0이면 그 줄을 뺍니다.</p>
       <div className="overflow-x-auto">

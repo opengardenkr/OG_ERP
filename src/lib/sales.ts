@@ -189,3 +189,27 @@ export const sameCompany = (a: string, b: string) => {
   const n = (s: string) => s.replace(/\(주\)|㈜|주식회사|\s/g, "").toLowerCase();
   return n(a) !== "" && n(a) === n(b);
 };
+
+export type MonthRow = { month: string; count: number; supply: number; vat: number; total: number; related: number; paid: number; due: number };
+
+/** 판매의 달 = 수주일(없으면 발행일)의 YYYY-MM */
+export const monthOf = (s: Pick<Sale, "ordered" | "issued">) => sinceOf(s).slice(0, 7);
+
+/** 월별 매출. 최근 달이 위. 관계사 거래는 합계에 들고 따로도 보인다(거래구분 = 관계사). */
+export function monthlySummary(sales: Sale[]): MonthRow[] {
+  const map = new Map<string, MonthRow>();
+  for (const s of sales) {
+    const month = monthOf(s);
+    if (!/^\d{4}-\d{2}$/.test(month)) continue;
+    const r = map.get(month) ?? { month, count: 0, supply: 0, vat: 0, total: 0, related: 0, paid: 0, due: 0 };
+    r.count += 1;
+    r.supply += s.supply;
+    r.vat += Math.max(0, s.total - s.supply);
+    r.total += s.total;
+    if (s.dealType === "관계사") r.related += s.total;
+    r.paid += paidOf(s);
+    r.due += balanceOf(s);
+    map.set(month, r);
+  }
+  return [...map.values()].sort((a, b) => b.month.localeCompare(a.month));
+}

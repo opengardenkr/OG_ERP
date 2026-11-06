@@ -230,3 +230,80 @@ export function changeSummary(before: EditLine[], after: EditLine[]): string {
   for (const l of old.values()) out.push(`−${l.name}${l.spec ? ` ${l.spec}` : ""}`);
   return out.join(", ") || "내용 그대로";
 }
+
+// ── 주문한 회사별로 묶기 ─────────────────────────────
+
+/** 주문이 어디서 왔나: 주문 링크(/o/<ID>) 또는 주문형 제안서(/p/<ID>). 요청사항 첫머리로 안다. */
+export function orderSource(memo: string): { kind: "link" | "proposal"; id: string } | null {
+  const m = memo.trimStart().match(/^\[(주문 링크|제안서) ([A-Za-z0-9_-]{6,64})\]/);
+  return m ? { kind: m[1] === "주문 링크" ? "link" : "proposal", id: m[2] } : null;
+}
+
+/**
+ * 손으로 만든 주문서는 사진 주소가 `/p/<제안서ID>/img/…`다 — 같은 물건을 먼저 카톡 제안서(/p/)로 돌렸다는 뜻.
+ * 그 제안서로 들어온 주문도 이 주문서의 주문으로 본다(예: 항공 구근 — 유니크가든은 제안서로, 금성농원은 링크로 주문).
+ */
+export function proposalIds(p: LinkPayload): string[] {
+  const out = new Set<string>();
+  for (const it of p.items) {
+    const m = typeof it.img === "string" ? it.img.match(/^\/p\/([a-z0-9-]{8,64})\/img\//) : null;
+    if (m) out.add(m[1]);
+  }
+  return [...out];
+}
+
+/** 주문 양식의 '상호 / 성함' 한 칸 — 앞이 상호다. (웹 견적 자동 초안은 반대로 읽어 상호·담당자가 뒤바뀌었다) */
+export function splitRequester(who: string): { company: string; person: string } {
+  const parts = who.split("/").map((s) => s.trim()).filter(Boolean);
+  if (parts.length >= 2) return { company: parts[0], person: parts.slice(1).join(" ") };
+  return { company: who.trim(), person: "" };
+}
+
+const digits = (s: string) => {
+  let d = s.replace(/\D/g, "");
+  if (d.startsWith("82")) d = "0" + d.slice(2);
+  return d;
+};
+export const phoneKey = digits;
+
+/** 같은 회사 = 같은 전화번호. 번호가 없으면 이름. */
+export const customerKey = (phone: string, who: string) => {
+  const d = digits(phone);
+  return d.length >= 9 ? `t${d}` : `n${norm(who)}`;
+};
+
+/** 제안서 주문의 요청사항에 붙는 "· ○○ 전용" */
+export const exclusiveFor = (memo: string) => (memo.split("\n")[0].match(/·\s*(.+?)\s*전용\s*$/) ?? [])[1] ?? "";
+
+export const quoteBase = (no: string) => no.replace(/-R\d+$/, "");
+
+// ── 배정 현황: 확보 수량을 누가 얼마나 가져가나 ─────────
+
+export type AllocRow = { key: string; label: string; size: string; stock: number | null; approx: boolean };
+
+/** 주문서의 줄(품목 × 규격). 재고 칸의 "9,360+"는 숫자로 읽고 '이상'으로 표시한다. */
+export function allocRows(p: LinkPayload): AllocRow[] {
+  return p.items.flatMap((it) => it.rows.map((r) => {
+    const raw = r[1] as unknown;
+    const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw.replace(/[^\d]/g, "")) : NaN;
+    return { key: `${it.k}|${r[0]}`, label: `${it.grp} ${it.name}`.trim(), size: String(r[0]), stock: Number.isFinite(n) && n > 0 ? n : null, approx: typeof raw === "string" && raw.includes("+") };
+  }));
+}
+
+const baseSpec = (s: string) => norm(s.replace(/잔량/g, ""));
+
+/** 견적(또는 주문) 줄 → 주문서 줄. 이름은 `분류 이름` 또는 이름, 규격은 같은 것 → 잔량 뺀 규격 → 줄이 하나뿐이면 그 줄. */
+export function allocate(p: LinkPayload, lines: OrderedLine[]): { qty: Map<string, number>; unmatched: OrderedLine[] } {
+  const qty = new Map<string, number>();
+  const unmatched: OrderedLine[] = [];
+  for (const l of lines) {
+    const name = norm(stripCrate(l.name));
+    const card = p.items.find((it) => norm(`${it.grp} ${it.name}`) === name || norm(it.name) === name);
+    const row = card && (card.rows.find((r) => norm(String(r[0])) === norm(l.spec)) ?? card.rows.find((r) => baseSpec(String(r[0])) === baseSpec(l.spec))
+      ?? (card.rows.length === 1 ? card.rows[0] : undefined));
+    if (!card || !row) { if (l.qty > 0) unmatched.push(l); continue; }
+    const key = `${card.k}|${row[0]}`;
+    qty.set(key, (qty.get(key) ?? 0) + l.qty);
+  }
+  return { qty, unmatched };
+}

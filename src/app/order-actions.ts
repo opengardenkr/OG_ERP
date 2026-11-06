@@ -2,8 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { readEditLines } from "@/lib/order-program";
+import { attachQuote, deductCustomer, editCustomerQuote, mergeCustomer } from "@/lib/airtable/order-deals";
 import {
-  adoptLink, deductStock, deleteProgram, deployLink, editOrderQuote, mergeOrders, refreshProgram, setLinkStatus, setProgramStatus,
+  adoptLink, deleteProgram, deployLink, refreshProgram, setLinkStatus, setProgramStatus,
 } from "@/lib/airtable/order-programs";
 import { auth } from "@/lib/auth";
 
@@ -69,20 +70,39 @@ export async function refreshStockAction(_prev: OrderActionState, form: FormData
   });
 }
 
+/** 회사 하나 = 견적 하나 */
+const customer = (form: FormData) => {
+  const v = String(form.get("customer") ?? "");
+  if (!/^[tn][\p{L}\p{N}]{1,80}$/u.test(v)) throw new Error("잘못된 요청입니다.");
+  return v;
+};
+
 export async function mergeOrdersAction(_prev: OrderActionState, form: FormData): Promise<OrderActionState> {
   return run(async () => {
     const who = await member();
-    const r = await mergeOrders(id(form, "link"), who);
+    const r = await mergeCustomer(id(form, "program"), customer(form), who);
     if (!r.ok) return { error: r.message };
-    return { error: null, done: r.data.created ? `주문 ${r.data.orders}건을 ${r.data.number}로 합쳤습니다.` : `견적 ${r.data.number} (주문 ${r.data.orders}건)` };
+    return { error: null, done: r.data.created ? `주문 ${r.data.orders}건을 ${r.data.number}로 모았습니다.` : `견적 ${r.data.number} (주문 ${r.data.orders}건)` };
+  });
+}
+
+export async function attachQuoteAction(_prev: OrderActionState, form: FormData): Promise<OrderActionState> {
+  return run(async () => {
+    await member();
+    const number = String(form.get("quote") ?? "");
+    if (!/^OG-\d{8}-\d+(-R\d+)?$/.test(number)) return { error: "견적번호가 올바르지 않습니다." };
+    const r = await attachQuote(id(form, "program"), customer(form), number);
+    return r.ok ? { error: null, done: `${r.data.number}에 묶었습니다.` } : { error: r.message };
   });
 }
 
 export async function deductStockAction(_prev: OrderActionState, form: FormData): Promise<OrderActionState> {
   return run(async () => {
     const who = await member();
-    const r = await deductStock(id(form, "link"), who);
+    const program = id(form, "program");
+    const r = await deductCustomer(program, customer(form), who);
     if (!r.ok) return { error: r.message };
+    await refreshProgram(program); // 빠진 재고를 주문서·링크에 바로 반영
     return { error: null, done: `재고 ${r.data.lines}품목을 뺐습니다.${r.data.unmatched.length ? ` 못 맞춘 줄: ${r.data.unmatched.join(", ")}` : ""}` };
   });
 }
@@ -110,7 +130,7 @@ export async function editOrderAction(_prev: OrderActionState, form: FormData): 
     try { raw = JSON.parse(String(form.get("lines") ?? "[]")); } catch { raw = null; }
     const lines = readEditLines(raw);
     if (!lines.ok) return { error: lines.message };
-    const r = await editOrderQuote(id(form, "link"), lines.lines, reason, who);
+    const r = await editCustomerQuote(id(form, "program"), customer(form), lines.lines, reason, who);
     if (!r.ok) return { error: r.message };
     return { error: null, done: r.data.created ? `수정본 ${r.data.number}을 만들었습니다. 고객에게 다시 보내 주세요.` : `견적 ${r.data.number}에 반영했습니다.` };
   });

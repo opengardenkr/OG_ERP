@@ -79,3 +79,17 @@ test('거래처 이름 비교는 (주)·띄어쓰기를 무시한다', () => {
   assert.ok(sameCompany('유니크 가든', '유니크가든'));
   assert.ok(!sameCompany('', ''));
 });
+
+test('월별 매출: 수주일(없으면 발행일) 기준, 관계사·미수 따로', async () => {
+  const { monthlySummary } = await import('../src/lib/sales.ts');
+  const rows = monthlySummary([
+    sale({ id: 'a', issued: '2026-09-03', total: 7200000, supply: 7200000 }),
+    sale({ id: 'b', issued: '2026-08-28', ordered: '2026-09-02', total: 4500000, supply: 4500000, dealType: '관계사', paid: 4500000 }),
+    sale({ id: 'c', issued: '2026-07-24', total: 74000, supply: 74000, payState: '완납' }),
+    sale({ id: 'd', issued: '2026-10-01', total: 1100000, supply: 1000000 }),
+  ]);
+  assert.deepEqual(rows.map((r) => r.month), ['2026-10', '2026-09', '2026-07']);
+  assert.deepEqual(rows[1], { month: '2026-09', count: 2, supply: 11700000, vat: 0, total: 11700000, related: 4500000, paid: 4500000, due: 7200000 });
+  assert.equal(rows[0].vat, 100000);
+  assert.equal(rows[2].due, 0);
+});

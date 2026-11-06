@@ -62,7 +62,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         </div>
       </div>
 
-      <Section title="견적·판매" action={<Link href="/sales" className="text-xs text-muted hover:text-ink">미수금 전체 →</Link>}>
+      <Section title="견적·판매" action={<Link href="/sales/receivables" className="text-xs text-muted hover:text-ink">미수금 전체 →</Link>}>
         {!quotes.ok ? <ErrorState message={quotes.message} /> : quotes.data.length === 0 ? (
           <p className="text-sm text-muted">이 이름으로 낸 견적이 없습니다. (견적서의 거래처명이 거래처 이름과 같아야 묶입니다)</p>
         ) : (

@@ -100,3 +100,36 @@ test('주문 변경: 수량 0은 빼고, 이름 없는 줄은 거절, 요약은 
   assert.equal(changeSummary(before, after), '세일러맨 2,100→2,700, +뉴욕 10/+ 1,000, −타히티 16/18');
   assert.equal(changeSummary(before, before), '내용 그대로');
 });
+
+test('주문한 곳 찾기: 링크·제안서 출처, 상호/성함, 같은 회사 = 같은 번호', async () => {
+  const m = await import('../src/lib/order-program.ts');
+  assert.deepEqual(m.orderSource('[주문 링크 5Sy9Fi1DhdMwpNbh7MGQ3Q] 항공 (2026. 11. 2)\n합계'), { kind: 'link', id: '5Sy9Fi1DhdMwpNbh7MGQ3Q' });
+  assert.deepEqual(m.orderSource('[제안서 air-20261028-aff57e25] 항공 · 유니크가든 전용'), { kind: 'proposal', id: 'air-20261028-aff57e25' });
+  assert.equal(m.orderSource('[ERP 직접 접수 · 이시형]'), null);
+  assert.deepEqual(m.splitRequester('금성농원/김희준'), { company: '금성농원', person: '김희준' });
+  assert.deepEqual(m.splitRequester('유니크가든'), { company: '유니크가든', person: '' });
+  assert.equal(m.customerKey('010-7405-2007', 'a'), m.customerKey('+82 10 7405 2007', 'b'));
+  assert.equal(m.exclusiveFor('[제안서 x] 항공 (2026. 10. 28) · 유니크가든 전용\n합계'), '유니크가든');
+  assert.equal(m.quoteBase('OG-20261029-001-R5'), 'OG-20261029-001');
+  const p = { v: 1, items: [{ k: 'st', grp: '알리움', name: '스티피타툼', img: '/p/air-20261028-aff57e25/img/st.jpg', rows: [['14/+', 400, 400, 0]] }, { k: 'x', grp: 'a', name: 'b', rows: [] }] };
+  assert.deepEqual(m.proposalIds(p), ['air-20261028-aff57e25']);
+});
+
+test('배정 현황: 견적 줄을 주문서 줄에 맞추고 "9,360+"는 이상으로', async () => {
+  const m = await import('../src/lib/order-program.ts');
+  const p = { v: 1, items: [
+    { k: 'dm', grp: '수선화', name: '더치마스터', rows: [['16/18', '9,360+', 1000, 0, 160]] },
+    { k: 'bb', grp: '무스카리', name: '베이비 브레스', rows: [['7/8 잔량', 500, 200, 0, 500]] },
+    { k: 'rm', grp: '알리움', name: '레드 모히칸', rows: [['10/12', 700, 1900, 0, 700], ['10/12 잔량', 300, 1900, 0, 300]] },
+  ] };
+  const rows = m.allocRows(p);
+  assert.deepEqual(rows[0], { key: 'dm|16/18', label: '수선화 더치마스터', size: '16/18', stock: 9360, approx: true });
+  const r = m.allocate(p, [
+    { name: '수선화 더치마스터', spec: '16/18', qty: 500, price: 1000 },
+    { name: '무스카리 베이비 브레스', spec: '7/8', qty: 2500, price: 200 },
+    { name: '알리움 레드 모히칸 1크레이트×700구', spec: '10/12', qty: 700, price: 1900 },
+    { name: '튤립 없음', spec: '1', qty: 5, price: 1 },
+  ]);
+  assert.deepEqual([...r.qty], [['dm|16/18', 500], ['bb|7/8 잔량', 2500], ['rm|10/12', 700]]);
+  assert.deepEqual(r.unmatched.map((l) => l.name), ['튤립 없음']);
+});

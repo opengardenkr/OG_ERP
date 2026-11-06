@@ -1,91 +1,111 @@
 import Link from "next/link";
 import { AppShell, Section } from "@/components/app-shell";
 import { EmptyState, ErrorState } from "@/components/data-state";
-import { PaymentForm } from "@/components/payment-form";
 import { SalesTabs } from "@/components/sales-tabs";
+import { isAdmin } from "@/config/users";
 import { getSales, quoteAirtableUrl } from "@/lib/airtable/sales";
 import { auth } from "@/lib/auth";
-import { isAdmin } from "@/config/users";
 import { todayInSeoul } from "@/lib/date";
-import { balanceOf, groupReceivables, paidOf, sinceOf, won, type Sale } from "@/lib/sales";
+import { balanceOf, monthOf, monthlySummary, paidOf, sinceOf, won, type Sale } from "@/lib/sales";
 
-export const metadata = { title: "미수금 | 오픈가든", robots: { index: false, follow: false } };
+export const metadata = { title: "매출 | 오픈가든", robots: { index: false, follow: false } };
 
-export default async function Page() {
-  const [session, result] = await Promise.all([auth(), getSales()]);
-  const today = todayInSeoul();
-  const admin = isAdmin(session?.user.member);
+/**
+ * 매출 › 매출: 지금까지의 판매 전체와 월별 합계. 판매 = 수주확정 이후 상태의 견적(미수금과 같은 원천).
+ * 달은 수주일(없으면 발행일) 기준. ?m=YYYY-MM 이면 그 달 판매만 아래 목록에.
+ */
+export default async function Page({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
+  const [session, result, params] = await Promise.all([auth(), getSales(), searchParams]);
+  const month = /^\d{4}-\d{2}$/.test(params.m ?? "") ? params.m! : "";
 
   return (
-    <AppShell title="매출" subtitle="판매(수주확정 이후) 건의 받을 돈. 입금이 들어오면 [입금 기록]을 누릅니다.">
-      <SalesTabs active="미수금" admin={admin} />
-      {!result.ok ? <ErrorState message={result.message} /> : <Receivables sales={result.data} today={today} />}
+    <AppShell title="매출" subtitle="지금까지의 판매와 월별 합계. 판매 = 견적서에서 수주확정 이후로 바뀐 건입니다.">
+      <SalesTabs active="매출" admin={isAdmin(session?.user.member)} />
+      {!result.ok ? <ErrorState message={result.message} /> : result.data.length === 0 ? (
+        <EmptyState message="아직 판매가 없습니다. 견적서에서 수주확정하면 여기에 쌓입니다." />
+      ) : <Overview sales={result.data} month={month} />}
     </AppShell>
   );
 }
 
-function Receivables({ sales, today }: { sales: Sale[]; today: string }) {
-  const groups = groupReceivables(sales, today);
-  const total = groups.reduce((a, g) => a + g.balance, 0);
-  const late = groups.flatMap((g) => g.sales).filter((s) => s.age > 30).reduce((a, s) => a + s.balance, 0);
-  const paid = sales.filter((s) => balanceOf(s) === 0 && s.total > 0).slice(0, 10);
+function Overview({ sales, month }: { sales: Sale[]; month: string }) {
+  const rows = monthlySummary(sales);
+  const year = todayInSeoul().slice(0, 4);
+  const thisMonth = todayInSeoul().slice(0, 7);
+  const sum = (list: Sale[]) => list.reduce((a, s) => a + s.total, 0);
+  const max = Math.max(1, ...rows.map((r) => r.total));
+  const list = (month ? sales.filter((s) => monthOf(s) === month) : sales).slice().sort((a, b) => sinceOf(b).localeCompare(sinceOf(a)));
 
   return (
     <>
-      <div className="mb-4 grid grid-cols-3 gap-2">
-        <Stat label="받을 돈" value={won(total)} />
-        <Stat label="건수" value={`${groups.reduce((a, g) => a + g.sales.length, 0)}건 · ${groups.length}곳`} />
-        <Stat label="30일 넘음" value={won(late)} warn={late > 0} />
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Stat label={`${year}년 매출`} value={won(sum(sales.filter((s) => sinceOf(s).startsWith(year))))} />
+        <Stat label="이번 달" value={won(sum(sales.filter((s) => monthOf(s) === thisMonth)))} />
+        <Stat label="전체 판매" value={`${sales.length}건 · ${won(sum(sales))}`} />
+        <Stat label="받을 돈" value={won(sales.reduce((a, s) => a + balanceOf(s), 0))} warn />
       </div>
 
-      {groups.length === 0 ? <EmptyState message="받을 돈이 남은 판매가 없습니다." /> : (
-        <div className="space-y-3">
-          {groups.map((g) => (
-            <section key={g.company} className="card overflow-hidden">
-              <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line bg-canvas px-3 py-2">
-                <b className="text-sm">{g.company}</b>
-                <span className="text-sm"><b>{won(g.balance)}</b><span className="ml-2 text-xs text-muted">가장 오래된 건 {g.oldest}일</span></span>
-              </header>
-              <ul className="divide-y divide-line">
-                {g.sales.map((s) => (
-                  <li key={s.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5 text-sm">
-                    <div className="min-w-0 flex-1">
-                      <p className="flex flex-wrap items-center gap-1.5">
-                        <a href={quoteAirtableUrl(s.id)} target="_blank" rel="noopener noreferrer" className="font-mono text-xs hover:underline">{s.number}</a>
-                        <span className="chip">{s.status}</span>
-                        {s.age > 30 ? <span className="chip text-danger">{s.age}일</span> : <span className="text-xs text-muted">{s.age}일</span>}
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted">
-                        {sinceOf(s) === s.ordered && s.ordered ? `수주 ${s.ordered}` : `발행 ${s.issued}`} · 합계 {won(s.total)}
-                        {paidOf(s) > 0 ? ` · 받음 ${won(paidOf(s))}${s.paidOn ? ` (${s.paidOn})` : ""}` : ""}
-                      </p>
-                    </div>
-                    <b className="text-right">{won(s.balance)}</b>
-                    <PaymentForm id={s.id} balance={s.balance} today={today} />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+      <Section title="월별">
+        <div className="card overflow-x-auto">
+          <table className="w-full min-w-[560px] text-xs">
+            <thead className="text-left text-muted">
+              <tr className="border-b border-line">
+                <th className="px-3 py-1.5 font-normal">월</th>
+                <th className="py-1.5 pr-2 text-right font-normal">건수</th>
+                <th className="py-1.5 pr-2 text-right font-normal">공급가액</th>
+                <th className="py-1.5 pr-2 text-right font-normal">부가세</th>
+                <th className="py-1.5 pr-2 text-right font-normal">합계</th>
+                <th className="py-1.5 pr-2 text-right font-normal">관계사</th>
+                <th className="py-1.5 pr-2 text-right font-normal">받은 돈</th>
+                <th className="py-1.5 pr-3 text-right font-normal">미수</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.month} className={`border-b border-line last:border-0 ${r.month === month ? "bg-brand-50" : ""}`}>
+                  <td className="px-3 py-1.5">
+                    <Link href={r.month === month ? "/sales" : `/sales?m=${r.month}`} className="font-semibold underline-offset-2 hover:underline">{r.month.replace("-", ". ")}.</Link>
+                    <span className="mt-0.5 block h-1 rounded bg-brand-600" style={{ width: `${Math.max(4, (r.total / max) * 100)}%` }} aria-hidden />
+                  </td>
+                  <td className="py-1.5 pr-2 text-right">{r.count}</td>
+                  <td className="py-1.5 pr-2 text-right">{won(r.supply)}</td>
+                  <td className="py-1.5 pr-2 text-right">{won(r.vat)}</td>
+                  <td className="py-1.5 pr-2 text-right font-semibold">{won(r.total)}</td>
+                  <td className="py-1.5 pr-2 text-right text-muted">{r.related ? won(r.related) : ""}</td>
+                  <td className="py-1.5 pr-2 text-right">{won(r.paid)}</td>
+                  <td className={`py-1.5 pr-3 text-right ${r.due ? "text-danger" : ""}`}>{r.due ? won(r.due) : ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+        <p className="mt-1 text-xs text-faint">달을 누르면 그 달 판매만 아래에 보입니다. 관계사 = 견적의 거래구분이 관계사(열린식물원·천안칼라관목 등)인 건, 합계에 들어 있습니다. 테스트 거래는 빠집니다.</p>
+      </Section>
 
-      <Section title="최근 완납">
-        {paid.length ? (
-          <ul className="card divide-y divide-line text-sm">
-            {paid.map((s) => (
-              <li key={s.id} className="flex flex-wrap justify-between gap-2 px-3 py-2">
-                <span>{s.company} <span className="font-mono text-xs text-muted">{s.number}</span></span>
-                <span className="text-muted">{won(s.total)}{s.paidOn ? ` · ${s.paidOn}` : ""}</span>
+      <Section
+        title={month ? `${month.replace("-", ". ")}. 판매 ${list.length}건` : `전체 판매 ${list.length}건`}
+        action={month ? <Link href="/sales" className="text-xs text-muted hover:text-ink">전체 보기</Link> : undefined}
+      >
+        <ul className="card divide-y divide-line text-sm">
+          {list.map((s) => {
+            const due = balanceOf(s);
+            return (
+              <li key={s.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2">
+                <span className="min-w-0">
+                  <span className="text-xs text-muted">{sinceOf(s)}</span>{" "}
+                  <b>{s.company || "거래처 없음"}</b>{" "}
+                  <a href={quoteAirtableUrl(s.id)} target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-muted hover:underline">{s.number}</a>{" "}
+                  <span className="chip">{s.status}</span>
+                  {s.dealType && s.dealType !== "일반" ? <span className="chip ml-1">{s.dealType}</span> : null}
+                </span>
+                <span className="text-right">
+                  <b>{won(s.total)}</b>
+                  <span className={`ml-2 text-xs ${due ? "text-danger" : "text-muted"}`}>{due ? `미수 ${won(due)}` : paidOf(s) ? "완납" : ""}</span>
+                </span>
               </li>
-            ))}
-          </ul>
-        ) : <p className="text-sm text-muted">아직 완납 기록이 없습니다.</p>}
-        <p className="mt-2 text-xs text-faint">
-          판매로 보는 상태: 수주확정·입고대기·출고대기·출하완료·완료. 테스트 거래와 삭제한 견적은 빠집니다.
-          입금을 잘못 적었으면 견적번호를 눌러 Airtable에서 <b>입금액</b>을 고칩니다.
-          {" "}<Link href="/quote" className="underline">견적서</Link>에서 상태를 바꾸면 여기에 나타납니다.
-        </p>
+            );
+          })}
+        </ul>
       </Section>
     </>
   );
