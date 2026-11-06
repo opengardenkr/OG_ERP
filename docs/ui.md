@@ -21,6 +21,7 @@
 제안서    /proposal         ← 속명 제안서(옛 제안서 생성기는 2026-11-06 삭제)
 견적서    /quote
 주문      /catalog
+매출      /sales            ← 미수금(입금 기록). /sales/margin 마진은 대표만
 품종 관리 /catalog/manage   ← 옛 '현장 빠른등록'(/catalog/quick)을 합쳤다
 거래처    /clients          ← 연락처·명함·영업일지. 상세 /clients/[id]
 영업 지도 /sales-map

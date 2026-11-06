@@ -23,3 +23,12 @@ export function memberNameOf(email: string | null | undefined): MemberName | nul
   const name = MEMBERS[email.toLowerCase() as keyof typeof MEMBERS];
   return name ?? null;
 }
+
+/**
+ * 매출 > 마진 화면을 볼 수 있는 사람(2026-11-06 사용자 요청: "접근 나만").
+ * 포털 화면만 막는다 — Airtable 표 자체는 두 사람 다 연다.
+ */
+export const ADMIN_MEMBERS: readonly MemberName[] = ["이시형"];
+
+export const isAdmin = (member: string | null | undefined) =>
+  !!member && (ADMIN_MEMBERS as readonly string[]).includes(member);

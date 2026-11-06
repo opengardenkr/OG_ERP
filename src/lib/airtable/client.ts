@@ -180,11 +180,13 @@ async function mutate<F>(
 export async function getRecordFresh<F>(
   tableId: string,
   id: string,
+  byId = false,
 ): Promise<AirtableRecord<F> | null> {
   const token = env("AIRTABLE_TOKEN");
   const baseId = env("AIRTABLE_BASE_ID");
+  const query = byId ? "?returnFieldsByFieldId=true" : "";
 
-  const response = await fetch(`${API}/${baseId}/${tableId}/${id}`, {
+  const response = await fetch(`${API}/${baseId}/${tableId}/${id}${query}`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });

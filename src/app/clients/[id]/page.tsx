@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import { AppShell, Section } from "@/components/app-shell";
 import { EmptyState, ErrorState } from "@/components/data-state";
 import { clientAirtableUrl, getClient } from "@/lib/airtable/clients";
+import { getQuotesFor, quoteAirtableUrl } from "@/lib/airtable/sales";
 import { phoneDigits, type SalesLog } from "@/lib/client-types";
+import { balanceOf, isSale, sameCompany, won } from "@/lib/sales";
 
 export const metadata = { title: "거래처 | 오픈가든", robots: { index: false, follow: false } };
 
@@ -19,6 +21,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (result.ok && !result.data) notFound();
   if (!result.ok) return <AppShell title="거래처"><ErrorState message={result.message} /></AppShell>;
   const c = result.data!;
+  const quotes = await getQuotesFor((company) => sameCompany(company, c.name));
   const tel = phoneDigits(c.phone);
   const isUrl = /^https?:\/\//i.test(c.address);
 
@@ -58,6 +61,31 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           ) : <p className="text-sm text-muted">명함 사진이 없습니다.</p>}
         </div>
       </div>
+
+      <Section title="견적·판매" action={<Link href="/sales" className="text-xs text-muted hover:text-ink">미수금 전체 →</Link>}>
+        {!quotes.ok ? <ErrorState message={quotes.message} /> : quotes.data.length === 0 ? (
+          <p className="text-sm text-muted">이 이름으로 낸 견적이 없습니다. (견적서의 거래처명이 거래처 이름과 같아야 묶입니다)</p>
+        ) : (
+          <ul className="card divide-y divide-line text-sm">
+            {quotes.data.slice(0, 12).map((q) => {
+              const due = isSale(q.status) ? balanceOf(q) : 0;
+              return (
+                <li key={q.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <a href={quoteAirtableUrl(q.id)} target="_blank" rel="noopener noreferrer" className="font-mono text-xs hover:underline">{q.number}</a>
+                    <span className="chip">{q.status || "상태 없음"}</span>
+                    <span className="text-xs text-muted">{q.issued}</span>
+                  </span>
+                  <span className="text-right">
+                    {won(q.total)}
+                    {due > 0 ? <span className="ml-2 text-xs font-semibold text-danger">미수 {won(due)}</span> : null}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Section>
 
       <Section title={`영업일지 ${c.logs.length}건`}>
         {c.logs.length ? (

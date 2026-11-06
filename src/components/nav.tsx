@@ -8,6 +8,7 @@ const ITEMS = [
   { href: "/proposal", label: "제안서" },
   { href: "/quote", label: "견적서" },
   { href: "/catalog", label: "주문" },
+  { href: "/sales", label: "매출" },
   { href: "/catalog/manage", label: "품종 관리" },
   { href: "/clients", label: "거래처" },
   { href: "/sales-map", label: "영업 지도" },
