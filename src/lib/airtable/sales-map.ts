@@ -1,6 +1,7 @@
 import "server-only";
 import { extractAddress } from "@/lib/sales-map-address";
-import { matchOffice, officeLocation, streetAddress, type Position } from "@/lib/gov-offices";
+import { matchOffice, mergeOffices, officeLocation, streetAddress, type Position } from "@/lib/gov-offices";
+import { EXTRA_GOV_OFFICES } from "@/lib/gov-offices-extra";
 import { getGovOffices } from "@/lib/gov-map/offices";
 
 import { selectRecords } from "@/lib/airtable/client";
@@ -65,7 +66,7 @@ function cleaned(value: unknown): string {
 // 주소가 아닌 '조경과 2층' 같은 기록에 핀을 임의로 찍지 않는다.
 
 export async function getSalesMapItems(): Promise<SalesMapItem[]> {
-  const [partners, governments, offices] = await Promise.all([
+  const [partners, governments, govMapOffices] = await Promise.all([
     selectRecords<PartnerRow>(PARTNERS, {
       fields: ["거래처명", "주소", "거래처_구분", "대표자명", "연락처", "영업 일지", "제안 이력", "비고"],
       revalidate: 300,
@@ -76,6 +77,8 @@ export async function getSalesMapItems(): Promise<SalesMapItem[]> {
     }),
     getGovOffices(),
   ]);
+
+  const offices = mergeOffices(govMapOffices, EXTRA_GOV_OFFICES);
 
   const businessItems = partners.map(({ id, fields: f }) => {
     const address = cleaned(f.주소);

@@ -27,7 +27,8 @@ export const normalize = (value: string) =>
   value.replace(/\s+/g, "").replace(/특별자치시|특별시|광역시/g, "");
 
 const PROVINCES: Record<string, RegExp> = {
-  서울: /서울/, 부산: /부산/, 대전: /대전/, 울산: /울산/, 대구: /대구/, 인천: /인천/,
+  // 대구: "해운대구"를 대구로 읽지 않는다(gov-map 원본 규칙에는 아직 없는 보정, 2026-11-06).
+  서울: /서울/, 부산: /부산/, 대전: /대전/, 울산: /울산/, 대구: /(?<!해운)대구/, 인천: /인천/,
   광주: /광주광역/, 세종: /세종시|세종특별/, 경기: /경기/, 강원: /강원/,
   충북: /충북|충청북도/, 충남: /충남|충청남도/, 전북: /전북|전라북도/,
   전남: /전남|전라남도/, 경북: /경북|경상북도/, 경남: /경남|경상남도/, 제주: /제주/,
@@ -68,6 +69,15 @@ export function officeLocation(office: GovOffice, location: string) {
     return { address: department.address, query: streetAddress(department.address), fallback: null };
   }
   return { address: office.address, query: streetAddress(office.address), fallback: office.position };
+}
+
+/**
+ * 관공서 지도의 기관 목록 + ERP가 따로 아는 기관.
+ * 관공서 지도에 같은 매칭 이름이 생기면 ERP 쪽 것을 뺀다 — 같은 길이로 둘이 맞으면 아무 데도 안 붙기 때문이다.
+ */
+export function mergeOffices(primary: GovOffice[], extra: GovOffice[]): GovOffice[] {
+  const taken = new Set(primary.flatMap(o => o.match.map(normalize)));
+  return [...primary, ...extra.filter(o => !o.match.some(key => taken.has(normalize(key))))];
 }
 
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
