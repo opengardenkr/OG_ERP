@@ -93,6 +93,7 @@ function supplierOf(f: Row): Supplier | null {
   const set = supplierByLabel(text(f[P.supplier]));
   if (set) return set;
   const p = parsePayload(f[P.items]);
+  if (p?.src === "hg-pool") return "hoogenraad"; // 호게나르드 DM 공동주문 품목을 웹이 직접 읽는다
   const g = p?.items.find((it) => typeof it.group === "string")?.group;
   if (g) return supplierOfGroup(g);
   return p?.items.some((it) => it.rows.some((r) => Number.isInteger(r[4]) && (r[4] as number) > 0)) ? "hbm" : null;
@@ -173,7 +174,7 @@ export type LinkDetail = LinkInfo & {
   orders: OrderInfo[]; amount: number;
   quote: { id: string; number: string; status: string; total: number; deducted: string; canDeduct: boolean } | null;
 };
-export type ProgramDetail = { id: string; supplier: Supplier | null; name: string; status: string; min: number; memo: string; note: string; editable: boolean; items: ProgramItem[]; links: LinkDetail[] };
+export type ProgramDetail = { id: string; supplier: Supplier | null; name: string; status: string; min: number; memo: string; note: string; editable: boolean; source: string; items: ProgramItem[]; links: LinkDetail[] };
 
 export async function getProgram(id: string): Promise<Result<ProgramDetail | null>> {
   if (!REC.test(id)) return ok(null);
@@ -204,7 +205,7 @@ export async function getProgram(id: string): Promise<Result<ProgramDetail | nul
       });
     return ok({
       id, supplier: supplierOf(f), name: text(f[P.name]) || "이름 없는 주문서", status: text(f[P.status]) || "사용", min: num(f[P.min]),
-      memo: text(f[P.memo]), note: text(f[P.note]), editable: payload.items.length === 0 || isPickerPayload(payload), items, links: mine,
+      memo: text(f[P.memo]), note: text(f[P.note]), editable: !payload.src && (payload.items.length === 0 || isPickerPayload(payload)), source: typeof payload.src === "string" ? payload.src : "", items, links: mine,
     });
   } catch (e) {
     return fail(message(e, "주문서를 불러오지 못했다"));
@@ -220,7 +221,7 @@ export async function getProgramSelection(id: string): Promise<{ name: string; s
   const payload = parsePayload(f[P.items]);
   return {
     name: text(f[P.name]), supplier: supplierOf(f), minOrder: num(f[P.min]), memo: text(f[P.memo]), selection: parseSelection(f[P.selection]),
-    editable: !payload?.items.length || isPickerPayload(payload),
+    editable: !payload?.src && (!payload?.items.length || isPickerPayload(payload)),
   };
 }
 
@@ -259,6 +260,7 @@ export async function saveProgram(input: ProgramInput, author: MemberName): Prom
   const exists = await getRecordFresh<Row>(PROGRAMS, input.id, true);
   if (!exists) throw new Error("주문서를 찾지 못했습니다. 새로고침해 주세요.");
   const before = parsePayload((exists.fields as Row)[P.items]);
+  if (before?.src) throw new Error("웹사이트가 품목을 직접 읽는 주문서(공동수입)라 여기서 고치지 않습니다. 품목은 호게나르드 DM의 공동주문 칸으로 고릅니다.");
   if (before?.items.length && !isPickerPayload(before)) {
     throw new Error("사진·크레이트를 손으로 넣은 주문서라 이 화면에서 고치면 그 정보가 사라집니다. 새 주문서로 저장해 주세요.");
   }
@@ -304,7 +306,7 @@ export async function deployLink(programId: string, input: { customer: string; p
     const rec = await getRecordFresh<Row>(PROGRAMS, programId, true);
     const f = (rec?.fields ?? {}) as Row;
     const payload = parsePayload(f[P.items]);
-    if (!rec || !payload?.items.length) return fail("주문서에 품목이 없습니다. [품목 고치기]에서 먼저 고르세요.");
+    if (!rec || (!payload?.items.length && !payload?.src)) return fail("주문서에 품목이 없습니다. [품목 고치기]에서 먼저 고르세요.");
     const fresh = refreshStock(payload, shownStock(await readStock(payloadKeys(payload), true)));
     const id = newLinkId();
     await createRecord<Row>(LINKS, {

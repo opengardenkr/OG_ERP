@@ -16,7 +16,10 @@ export function parsePayload(raw: unknown): LinkPayload | null {
   if (typeof raw !== "string" || !raw.trim()) return null;
   try {
     const data = JSON.parse(raw) as LinkPayload;
-    return data && data.v === 1 && Array.isArray(data.items) ? data : null;
+    if (!data || data.v !== 1) return null;
+    // 공동수입(src: "hg-pool")처럼 웹사이트가 품목을 직접 읽는 링크는 items가 없다 — 빈 목록으로 받는다
+    if (Array.isArray(data.items)) return data;
+    return typeof data.src === "string" && data.src ? { ...data, items: [] } : null;
   } catch {
     return null;
   }

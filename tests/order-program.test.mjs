@@ -72,3 +72,14 @@ test('견적번호: 오늘 가장 큰 번호 + 1, 수정본은 최신 번호를 
   assert.equal(latestRevision(rows, 'OG-1-001').number, 'OG-1-001-R3');
   assert.equal(latestRevision(rows, 'OG-9'), null);
 });
+
+test('공동수입 링크(src)는 items 없이도 읽고, ERP가 품목을 쓰지 않는다', async () => {
+  const { parsePayload, isManagedPayload, isPickerPayload, refreshStock } = await import('../src/lib/order-program.ts');
+  const p = parsePayload(JSON.stringify({ v: 1, src: 'hg-pool', minEach: 200 }));
+  assert.deepEqual(p.items, []);
+  assert.equal(p.minEach, 200);
+  assert.equal(isManagedPayload(p), false);
+  assert.equal(isPickerPayload(p), false);
+  assert.equal(refreshStock(p, new Map()).src, 'hg-pool');
+  assert.equal(parsePayload(JSON.stringify({ v: 1 })), null);
+});

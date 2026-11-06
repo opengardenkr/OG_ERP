@@ -20,7 +20,7 @@
 대시보드  /                 ← 로그인 후 첫 화면 (할 일 보드 + 이번 주/다음 주 달력·일정 등록)
 제안서    /proposal         ← 속명 제안서(옛 제안서 생성기는 2026-11-06 삭제)
 견적서    /quote
-주문      /catalog          ← 위 탭: 국내 · 호게나르드 · HBM(?s=). 주문서 폴더 목록. /catalog/[id] 폴더(회사 배포·합산 견적·재고 차감), /catalog/pick 품목 고르기
+주문      /catalog          ← 위 탭: 주문프로그램(폴더 목록, 업체별 묶음) / 주문서 작성(/catalog/pick?program=new, 업체 고르기). /catalog/[id] 폴더(회사 배포·합산 견적·재고 차감), /catalog/pick 품목 고르기
 매출      /sales            ← 미수금(입금 기록). /sales/margin 마진은 대표만
 품종 관리 /catalog/manage   ← 옛 '현장 빠른등록'(/catalog/quick)을 합쳤다
 거래처    /clients          ← 연락처·명함·영업일지. 상세 /clients/[id]
