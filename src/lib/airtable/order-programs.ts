@@ -2,14 +2,15 @@ import "server-only";
 
 import type { MemberName } from "@/config/users";
 import { createRecord, deleteRecord, getRecord, getRecordFresh, selectRecordsFresh, updateRecord, updateRecords } from "@/lib/airtable/client";
-import { loadDeal, type Customer } from "@/lib/airtable/order-deals";
+import { getClients } from "@/lib/airtable/clients";
+import { buildCustomers, loadDeal, type Customer } from "@/lib/airtable/order-deals";
 import {
-  L, LINKS, LINK_FIELDS, P, PROGRAMS, REC, ids, message, num, readLinks, readOrders, readPrograms, readStock, shownStock, supplierOf,
+  L, LINKS, LINK_FIELDS, P, PROGRAMS, REC, ids, message, num, readLinks, readOrders, readPrograms, readQuoteList, readStock, shownStock, supplierOf,
   text, toLink, type LinkInfo, type Row,
 } from "@/lib/airtable/order-tables";
 import { SUPPLIER_INFO, linkUrl, newLinkId, programPayloads, type OrderGroup, type ProgramInput, type Selection, type Supplier } from "@/lib/order";
 import {
-  allocRows, allocate, isPickerPayload, parsePayload, parseSelection, payloadKeys, proposalIds, refreshStock, seoulParts, stockKey,
+  allocRows, allocate, isPickerPayload, parsePayload, parseSelection, payloadKeys, refreshStock, seoulParts, stockKey,
   type AllocRow, type LinkPayload, type OrderedLine,
 } from "@/lib/order-program";
 import { fail, ok, type Result } from "@/lib/result";
@@ -18,21 +19,21 @@ import { fail, ok, type Result } from "@/lib/result";
  * 주문서(폴더)의 Airtable 경계: 목록·상세·저장·재고 반영·회사 배포·옮기기·삭제.
  * 주문한 회사별 일(합산 견적·주문 변경·재고 차감)은 order-deals.ts. 표·필드는 order-tables.ts.
  */
-export type ProgramSummary = { id: string; supplier: Supplier | null; name: string; status: string; items: number; links: number; orders: number; amount: number; modified: string };
+export type ProgramSummary = { id: string; supplier: Supplier | null; name: string; status: string; items: number; links: number; orders: number; customers: number; amount: number; modified: string };
 
 export async function listPrograms(): Promise<Result<{ programs: ProgramSummary[]; loose: LinkInfo[] }>> {
   try {
-    const [programs, links, orders] = await Promise.all([readPrograms(), readLinks(), readOrders()]);
+    const [programs, links, orders, quotes, clients] = await Promise.all([readPrograms(), readLinks(), readOrders(), readQuoteList(), getClients()]);
     const linkInfos = links.map((r) => toLink(r.id, r.fields));
     const list = programs.map((r): ProgramSummary => {
+      const payload = parsePayload(r.fields[P.items]) ?? { v: 1 as const, items: [] };
       const mine = linkInfos.filter((l) => l.program === r.id);
-      const ids = new Set(mine.map((l) => l.linkId));
-      const props = new Set(proposalIds(parsePayload(r.fields[P.items]) ?? { v: 1, items: [] }));
-      const got = orders.filter((o) => (o.source.kind === "link" ? ids.has(o.source.id) : props.has(o.source.id)));
+      // 금액은 회사별 최신 견적 기준(견적이 없으면 받은 주문) — 상세 화면과 같은 계산
+      const customers = buildCustomers(payload, mine, orders, quotes, clients.ok ? clients.data : []);
       return {
         id: r.id, supplier: supplierOf(r.fields), name: text(r.fields[P.name]) || "이름 없는 주문서", status: text(r.fields[P.status]) || "사용",
-        items: parsePayload(r.fields[P.items])?.items.length ?? 0, links: mine.length, orders: got.length,
-        amount: got.reduce((a, o) => a + o.total, 0), modified: text(r.fields[P.modified]),
+        items: payload.items.length, links: mine.length, orders: customers.reduce((a, c) => a + c.orders.length, 0),
+        customers: customers.length, amount: customers.reduce((a, c) => a + c.amount, 0), modified: text(r.fields[P.modified]),
       };
     });
     list.sort((a, b) => Number(a.status === "보관") - Number(b.status === "보관") || b.modified.localeCompare(a.modified));

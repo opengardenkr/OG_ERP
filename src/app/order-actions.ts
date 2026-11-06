@@ -1,8 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { readEditLines } from "@/lib/order-program";
-import { attachQuote, deductCustomer, editCustomerQuote, mergeCustomer } from "@/lib/airtable/order-deals";
+import { deductCustomer, hideOtherDrafts, mergeCustomer } from "@/lib/airtable/order-deals";
 import {
   adoptLink, deleteProgram, deployLink, refreshProgram, setLinkStatus, setProgramStatus,
 } from "@/lib/airtable/order-programs";
@@ -86,13 +85,11 @@ export async function mergeOrdersAction(_prev: OrderActionState, form: FormData)
   });
 }
 
-export async function attachQuoteAction(_prev: OrderActionState, form: FormData): Promise<OrderActionState> {
+/** 따라가지 않는 자동 초안을 삭제함으로(되살릴 수 있다) */
+export async function hideDraftsAction(_prev: OrderActionState, form: FormData): Promise<OrderActionState> {
   return run(async () => {
-    await member();
-    const number = String(form.get("quote") ?? "");
-    if (!/^OG-\d{8}-\d+(-R\d+)?$/.test(number)) return { error: "견적번호가 올바르지 않습니다." };
-    const r = await attachQuote(id(form, "program"), customer(form), number);
-    return r.ok ? { error: null, done: `${r.data.number}에 묶었습니다.` } : { error: r.message };
+    const r = await hideOtherDrafts(id(form, "program"), customer(form), await member());
+    return r.ok ? { error: null, done: r.data.hidden ? `안 쓰는 초안 ${r.data.hidden}장을 삭제함으로 옮겼습니다.` : "숨길 초안이 없습니다." } : { error: r.message };
   });
 }
 
@@ -118,22 +115,6 @@ export async function adoptLinkAction(_prev: OrderActionState, form: FormData): 
   // redirect는 예외로 동작하므로 try 밖에서 부른다
   if (target) redirect(`/catalog/${target}`);
   return state;
-}
-
-/** 주문 뒤 카톡·전화로 바뀐 내용 → 그 회사 견적(작성이면 그대로, 보냈으면 수정본) */
-export async function editOrderAction(_prev: OrderActionState, form: FormData): Promise<OrderActionState> {
-  return run(async () => {
-    const who = await member();
-    const reason = String(form.get("reason") ?? "").replace(/[\x00-\x1f]/g, " ").trim().slice(0, 200);
-    if (!reason) return { error: "무엇이 바뀌었는지 한 줄 적어 주세요. 예: 11/6 카톡 — 세일러맨 2크레이트 추가" };
-    let raw: unknown = null;
-    try { raw = JSON.parse(String(form.get("lines") ?? "[]")); } catch { raw = null; }
-    const lines = readEditLines(raw);
-    if (!lines.ok) return { error: lines.message };
-    const r = await editCustomerQuote(id(form, "program"), customer(form), lines.lines, reason, who);
-    if (!r.ok) return { error: r.message };
-    return { error: null, done: r.data.created ? `수정본 ${r.data.number}을 만들었습니다. 고객에게 다시 보내 주세요.` : `견적 ${r.data.number}에 반영했습니다.` };
-  });
 }
 
 /** 보관한 주문서 지우기. 지우면 목록으로 돌아간다. */

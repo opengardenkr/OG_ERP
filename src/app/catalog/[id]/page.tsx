@@ -1,16 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  attachQuoteAction, deductStockAction, deleteProgramAction, linkStatusAction, mergeOrdersAction, programStatusAction, refreshStockAction,
+  deductStockAction, deleteProgramAction, hideDraftsAction, linkStatusAction, mergeOrdersAction, programStatusAction, refreshStockAction,
 } from "@/app/order-actions";
 import { AppShell, Section } from "@/components/app-shell";
 import { EmptyState, ErrorState } from "@/components/data-state";
-import { ActionButton, CopyLink, DeployForm, OrderEditor } from "@/components/order-program-actions";
+import { ActionButton, CopyLink, DeployForm } from "@/components/order-program-actions";
 import { OrderTabs } from "@/components/order-tabs";
 import { getClients } from "@/lib/airtable/clients";
 import type { Customer } from "@/lib/airtable/order-deals";
 import { getProgram, type Allocation, type LinkDetail } from "@/lib/airtable/order-programs";
-import { quoteAirtableUrl } from "@/lib/airtable/sales";
 import { GROUP_INFO, SUPPLIER_INFO } from "@/lib/order";
 import { won } from "@/lib/sales";
 
@@ -25,8 +24,6 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (!result.ok) return <AppShell title="주문서"><ErrorState message={result.message} /></AppShell>;
   const p = result.data!;
   const clientOptions = clients.ok ? clients.data.map((c) => ({ name: c.name, phone: c.phone })) : [];
-  // 주문 내용 고치기에서 고를 수 있는 줄 — 링크 주문이 견적에 들어가는 이름(분류 이름)과 같게
-  const options = p.items.flatMap((it) => it.rows.map((r) => ({ name: `${it.grp} ${it.name}`.trim(), spec: r.size, price: r.price })));
 
   return (
     <AppShell
@@ -55,8 +52,9 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
       <Section title={`주문한 회사 ${p.customers.length}곳`}>
         {p.customers.length ? (
-          <ul className="space-y-2">{p.customers.map((c) => <CustomerCard key={c.key} c={c} programId={p.id} options={options} />)}</ul>
+          <ul className="space-y-2">{p.customers.map((c) => <CustomerCard key={c.key} c={c} programId={p.id} />)}</ul>
         ) : <p className="text-sm text-muted">아직 받은 주문이 없습니다. 링크를 회사에 보내면 주문이 여기 회사별로 모입니다.</p>}
+        {p.customers.length ? <p className="mt-1.5 text-xs text-faint">회사마다 <b>최신 견적</b>을 따라갑니다. 카톡·전화로 바뀐 내용은 <Link href="/quote?view=history" className="underline">견적서</Link>에서만 고칩니다(보낸 견적은 수정본). 여기서는 고치지 않습니다.</p> : null}
       </Section>
 
       {p.customers.length ? <AllocationTable a={p.allocation} /> : null}
@@ -121,8 +119,10 @@ function LinkCard({ l }: { l: LinkDetail }) {
   );
 }
 
-function CustomerCard({ c, programId, options }: { c: Customer; programId: string; options: { name: string; spec: string; price: number }[] }) {
+function CustomerCard({ c, programId }: { c: Customer; programId: string }) {
   const f = { program: programId, customer: c.key };
+  const pending = c.orders.filter((o) => c.pendingIds.includes(o.id));
+  const autoDrafts = c.others.filter((o) => o.auto);
   return (
     <li className="card p-3 text-sm">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -133,48 +133,47 @@ function CustomerCard({ c, programId, options }: { c: Customer; programId: strin
         </p>
         <span className="text-xs text-muted">{c.via.join(" · ")}</span>
       </div>
-      <ul className="mt-1 space-y-0.5 text-xs text-muted">
-        {c.orders.map((o) => (
-          <li key={o.id}>{o.at.slice(0, 10)} · {o.no} · {won(o.total)}{o.draft ? ` → ${o.draft}` : " · 견적 없음"}</li>
-        ))}
-      </ul>
 
-      <div className="mt-2 flex flex-wrap items-start justify-between gap-2 border-t border-line pt-2">
-        {c.quote ? (
-          <p className="text-xs">
-            견적 <a href={quoteAirtableUrl(c.quote.id)} target="_blank" rel="noopener noreferrer" className="font-mono underline">{c.quote.number}</a>
-            {" "}<span className="chip">{c.quote.status}</span> {won(c.quote.total)}
-            {c.quote.deducted ? <span className="ml-1.5 text-brand-600">재고 차감함 {c.quote.deducted.slice(0, 10)}</span> : null}
-            {c.pending ? <span className="ml-1.5 text-danger">견적에 안 들어간 주문 {c.pending}건</span> : null}
-          </p>
-        ) : <span className="text-xs text-danger">아직 견적이 없습니다.</span>}
-        <div className="flex flex-wrap items-start gap-1.5">
-          {!c.quote ? <ActionButton action={mergeOrdersAction} fields={f} label={c.orders.length > 1 ? `주문 ${c.orders.length}건 견적으로 모으기` : "견적서로 묶기"} primary /> : null}
-          {c.quote && c.pending && c.quote.canEdit ? <ActionButton action={mergeOrdersAction} fields={f} label="새 주문 견적에 더하기" primary /> : null}
-          {c.quote?.canDeduct ? (
-            <ActionButton action={deductStockAction} fields={f} label="재고 차감" primary confirm={`${c.quote.number}의 수량을 라인업 재고에서 뺍니다. 한 번만 할 수 있습니다. 진행할까요?`} />
-          ) : null}
+      {c.quote ? (
+        <div className="mt-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p>
+              <span className="font-mono text-xs">{c.quote.number}</span> <span className="chip">{c.quote.status}</span> <b>{won(c.quote.total)}</b>
+              {c.quote.deducted ? <span className="ml-1.5 text-xs text-brand-600">재고 차감함 {c.quote.deducted.slice(0, 10)}</span> : null}
+            </p>
+            <div className="flex flex-wrap items-start gap-1.5">
+              <Link href="/quote?view=history" className="btn px-2.5 text-xs">견적서에서 고치기 →</Link>
+              {c.quote.canDeduct ? (
+                <ActionButton action={deductStockAction} fields={f} label="재고 차감" primary confirm={`${c.quote.number}의 수량을 라인업 재고에서 뺍니다. 한 번만 할 수 있습니다. 진행할까요?`} />
+              ) : null}
+            </div>
+          </div>
+          <p className="mt-0.5 text-xs text-muted">{c.quote.lines.map((l) => `${l.name} ${l.spec} ${fmt(l.qty)}`.replace(/\s+/g, " ")).join(" · ")}</p>
         </div>
-      </div>
-      {!c.quote && c.candidates.length ? (
-        <div className="mt-2 rounded border border-line bg-canvas p-2 text-xs">
-          <p className="mb-1 text-muted">이 회사로 따로 만든 견적이 있습니다. 같은 건이면 묶으세요(새로 만들면 두 번 청구됩니다).</p>
-          <ul className="space-y-1">
-            {c.candidates.map((q) => (
-              <li key={q.number} className="flex flex-wrap items-center justify-between gap-2">
-                <span><span className="font-mono">{q.number}</span> <span className="chip">{q.status}</span> {won(q.total)} · {q.issued}</span>
-                <ActionButton action={attachQuoteAction} fields={{ ...f, quote: q.number }} label="이 견적으로 묶기" />
-              </li>
-            ))}
-          </ul>
+      ) : (
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs text-danger">아직 견적이 없습니다.</span>
+          <ActionButton action={mergeOrdersAction} fields={f} label={c.orders.length > 1 ? `주문 ${c.orders.length}건 견적 하나로 모으기` : "견적서로 묶기"} primary />
+        </div>
+      )}
+
+      {c.quote && pending.length ? (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-line bg-canvas p-2 text-xs">
+          <span className="text-danger">견적 뒤에 들어온 주문 {pending.length}건: {pending.map((o) => `${o.no} ${won(o.total)}`).join(", ")}</span>
+          {c.quote.canAdd
+            ? <ActionButton action={mergeOrdersAction} fields={f} label="이 주문을 견적에 더하기" primary confirm={`${pending.map((o) => o.no).join(", ")}의 품목을 ${c.quote.number}에 더합니다.${c.quote.status === "작성" ? "" : " 이미 보낸 견적이라 수정본이 생깁니다."}\n견적서에서 이미 넣었다면 누르지 마세요(두 번 들어갑니다).`} />
+            : <span className="text-muted">견적이 {c.quote.status}라 견적서에서 반영합니다.</span>}
         </div>
       ) : null}
-      {c.quote?.canEdit ? <div className="mt-2 flex justify-end"><OrderEditor program={programId} customer={c.key} lines={c.quote.lines} options={options} sent={c.quote.status !== "작성"} /></div> : null}
-      {c.quote?.changes.length ? (
-        <ul className="mt-2 space-y-0.5 border-t border-line pt-1.5 text-[11px] text-muted">{c.quote.changes.map((x) => <li key={x}>{x}</li>)}</ul>
-      ) : null}
-      {c.quote && !c.quote.canDeduct && !c.quote.deducted ? (
-        <p className="mt-1 text-[11px] text-faint">카톡·전화로 바뀌면 [주문 내용 고치기]에 적습니다. 견적서에서 수주확정하면 [재고 차감]이 나타납니다.</p>
+
+      <ul className="mt-2 space-y-0.5 border-t border-line pt-1.5 text-[11px] text-muted">
+        {c.orders.map((o) => <li key={o.id}>받은 주문 {o.at.slice(0, 10)} · {o.no} · {won(o.total)}{c.quote && o.total !== c.quote.total ? " (처음 받은 그대로)" : ""}</li>)}
+        {c.others.map((o) => <li key={o.id}>안 쓰는 견적 {o.number} · {o.status} · {won(o.total)}{o.auto ? " · 자동 초안" : ""}</li>)}
+      </ul>
+      {c.quote && autoDrafts.length ? (
+        <div className="mt-1 flex justify-end">
+          <ActionButton action={hideDraftsAction} fields={f} label={`안 쓰는 자동 초안 ${autoDrafts.length}장 숨기기`} confirm={`${autoDrafts.map((o) => o.number).join(", ")}을 견적서 목록에서 숨깁니다(삭제함, 되살릴 수 있음). 이 회사는 ${c.quote.number}을 따릅니다.`} />
+        </div>
       ) : null}
     </li>
   );
@@ -213,7 +212,7 @@ function AllocationTable({ a }: { a: Allocation }) {
       {a.unmatched.length ? (
         <p className="mt-1.5 text-xs text-danger">주문서에 없는 줄: {a.unmatched.map((u) => `${u.customer} — ${u.line.name} ${u.line.spec} ${fmt(u.line.qty)}`).join(" · ")}</p>
       ) : null}
-      <p className="mt-1 text-xs text-faint">확보 = 주문서에 적힌 재고. 회사별 수량은 견적(최신 수정본)이 있으면 견적, 없으면 받은 주문 기준.</p>
+      <p className="mt-1 text-xs text-faint">확보 = 주문서에 적힌 재고. 회사별 수량은 그 회사의 최신 견적(없으면 받은 주문) 기준.</p>
     </Section>
   );
 }

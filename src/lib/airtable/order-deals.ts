@@ -2,67 +2,93 @@ import "server-only";
 
 import type { MemberName } from "@/config/users";
 import { createRecord, getRecord, getRecordFresh, updateRecord, updateRecords } from "@/lib/airtable/client";
+import type { ClientSummary } from "@/lib/client-types";
 import { getClients } from "@/lib/airtable/clients";
 import {
-  LINKS, LINK_FIELDS, P, PROGRAMS, Q, QUOTES, R, REQUESTS, STOCK, ids, message, num, quoteLines, readLinks, readOrders, readQuoteList,
+  LINKS, LINK_FIELDS, P, PROGRAMS, Q, QUOTES, R, REQUESTS, STOCK, ids, message, readLinks, readOrders, readQuoteList,
   readStock, text, toLink, type LinkInfo, type OrderInfo, type QuoteLite, type Row,
 } from "@/lib/airtable/order-tables";
 import { selectRecordsFresh } from "@/lib/airtable/client";
 import type { OrderGroup } from "@/lib/order";
 import {
-  changeSummary, customerKey, deductions, exclusiveFor, latestRevision, mergeLines, nextQuoteNo, nextRevisionNo, parsePayload,
+  customerKey, deductions, exclusiveFor, followQuote, mergeLines, nextQuoteNo, nextRevisionNo, parsePayload, pendingOrders,
   phoneKey, proposalIds, quoteBase, quoteSummary, quoteTotals, seoulParts, splitRequester, stockKey,
   type EditLine, type LinkPayload, type OrderedLine,
 } from "@/lib/order-program";
 import { fail, ok, type Result } from "@/lib/result";
-import { isSale, memoLine, prependMemo, sameCompany } from "@/lib/sales";
+import { isSale, memoLine, prependMemo } from "@/lib/sales";
 
 /**
  * 주문서 하나로 들어온 주문을 **주문한 회사별로** 묶는다(2026-11-06 — 링크 하나를 여러 곳에 돌리면 주문이 섞였다).
  * - 주문의 출처: 이 주문서에 묶인 주문 링크(/o/) + 이 주문서 사진이 가리키는 주문형 제안서(/p/).
  * - 같은 회사 = 같은 전화번호(없으면 이름). 회사 이름은 거래처 표(전화번호) → 제안서 "○○ 전용" → '상호 / 성함'의 앞.
- * - 회사의 견적 = 그 회사 주문들이 가리키는 견적(견적요청 `견적서 초안`)의 최신 수정본. 견적은 회사마다 하나로 모은다.
- * 합산·주문 변경·재고 차감은 모두 (주문서, 회사) 단위다.
+ * - 회사의 주문 = 그 회사의 **최신 견적**(`followQuote`). 주문 뒤 바뀐 내용은 견적서(생성기)에서만 고친다 —
+ *   여기는 고치는 창구가 아니다. 여기서 하는 쓰기는 견적 만들기·모으기, 안 쓰는 초안 숨기기, 재고 차감뿐.
  */
 
 type Quote = QuoteLite & { fields: Row };
 
 export type CustomerQuote = {
-  id: string; number: string; status: string; total: number; deducted: string;
-  canDeduct: boolean; canEdit: boolean; lines: EditLine[]; changes: string[];
+  id: string; number: string; status: string; total: number; deducted: string; at: string;
+  /** 판매 상태 전이라 새 주문을 더할 수 있다 */
+  canAdd: boolean; canDeduct: boolean; lines: EditLine[];
 };
+export type OtherQuote = { id: string; number: string; status: string; total: number; issued: string; auto: boolean };
 export type Customer = {
   key: string; company: string; person: string; phone: string; via: string[];
-  orders: OrderInfo[]; amount: number;
+  orders: OrderInfo[];
+  /** 지금 금액: 견적이 있으면 견적 합계, 없으면 받은 주문 합 */
+  amount: number;
   quote: CustomerQuote | null;
-  /** 아직 견적에 안 들어간 주문 수(합치기·더하기 대상) */
-  pending: number;
-  /** 견적이 안 묶인 주문의 후보: 같은 번호·이름으로 주문 뒤에 만든 견적(손으로 만든 견적) */
-  candidates: { number: string; status: string; total: number; issued: string }[];
+  /** 따라가지 않는 다른 견적(자동 초안·옛 견적) */
+  others: OtherQuote[];
+  /** 견적에 아직 안 들어간 주문 */
+  pendingIds: string[];
   /** 배정 현황 계산용: 견적이 있으면 견적 줄, 없으면 주문 줄 합 */
   lines: OrderedLine[];
 };
 export type Deal = { programId: string; payload: LinkPayload; links: LinkInfo[]; customers: Customer[] };
 
-const nonDeleted = (qs: Quote[]) => qs.filter((q) => !q.deleted);
-const inChain = (no: string, base: string) => !!no && (no === base || no.startsWith(`${base}-R`));
+const ref = (q: Quote) => ({
+  ...q, phone: text(q.fields[Q.phone]), company: text(q.fields[Q.company]), issued: text(q.fields[Q.issued]), deal: text(q.fields[Q.deal]),
+});
 
-function customerQuote(quotes: Quote[], base: string): CustomerQuote | null {
-  const q = latestRevision(nonDeleted(quotes), base);
-  if (!q) return null;
-  return {
-    id: q.id, number: q.number, status: q.status, total: q.total, deducted: q.deducted,
-    canDeduct: isSale(q.status) && !q.deducted, canEdit: !isSale(q.status) && !q.deducted, lines: q.lines,
-    changes: quotes.filter((x) => inChain(x.number, base)).flatMap((x) => x.memo.split("\n"))
-      .filter((m) => m.includes(" · 주문변경 · ")).sort().reverse().slice(0, 5),
-  };
-}
+/** 주문서 하나의 회사별 묶음. 목록 화면(합계)과 상세 화면이 같이 쓴다. */
+export function buildCustomers(payload: LinkPayload, links: LinkInfo[], orders: OrderInfo[], quotes: Quote[], clients: Pick<ClientSummary, "name" | "ceo" | "phone">[]): Customer[] {
+  const linkIds = new Set(links.map((l) => l.linkId));
+  const props = new Set(proposalIds(payload));
+  const mine = orders.filter((o) => (o.source.kind === "link" ? linkIds.has(o.source.id) : props.has(o.source.id)));
+  const byPhone = new Map(clients.map((c) => [phoneKey(c.phone), c] as const));
+  const refs = quotes.map(ref);
 
-/** 회사의 견적 기준 번호: 주문들이 가리키는 견적 중 지워지지 않은 것(가장 최근) */
-function baseOf(orders: OrderInfo[], quotes: Quote[]): string {
-  const live = new Set(nonDeleted(quotes).map((q) => q.number));
-  const bases = orders.map((o) => quoteBase(o.draft)).filter((b) => b && live.has(b));
-  return bases.sort().reverse()[0] ?? "";
+  const groups = new Map<string, OrderInfo[]>();
+  for (const o of [...mine].sort((a, b) => a.at.localeCompare(b.at))) {
+    const key = customerKey(o.phone, o.who);
+    groups.set(key, [...(groups.get(key) ?? []), o]);
+  }
+  const customers = [...groups].map(([key, list]): Customer => {
+    const last = list[list.length - 1];
+    const client = byPhone.get(phoneKey(last.phone));
+    const req = splitRequester(last.who);
+    const company = client?.name || exclusiveFor(last.memo) || req.company || "이름 없는 주문";
+    const person = req.person || (req.company !== company ? req.company : "") || client?.ceo || "";
+    const f = followQuote(refs, { phone: last.phone, company, drafts: list.map((o) => o.draft), since: list[0].at.slice(0, 10) }, payload);
+    const q = f.current;
+    const quote: CustomerQuote | null = q ? {
+      id: q.id, number: q.number, status: q.status, total: q.total, deducted: q.deducted, at: q.at, lines: q.lines,
+      canAdd: !isSale(q.status) && !q.deducted, canDeduct: isSale(q.status) && !q.deducted,
+    } : null;
+    const own = new Set(list.map((o) => quoteBase(o.draft)).filter(Boolean));
+    return {
+      key, company, person, phone: last.phone,
+      via: [...new Set(list.map((o) => (o.source.kind === "link" ? links.find((l) => l.linkId === o.source.id)?.title || "주문 링크" : "카톡 제안서")))],
+      orders: list, amount: quote ? quote.total : list.reduce((a, o) => a + o.total, 0), quote,
+      others: f.others.map((x) => ({ id: x.id, number: x.number, status: x.status, total: x.total, issued: x.issued, auto: x.status === "작성" && own.has(x.number) })),
+      pendingIds: pendingOrders(list, q, f.auto).map((o) => o.id),
+      lines: quote ? quote.lines : mergeLines(list.map((o) => o.lines)),
+    };
+  });
+  return customers.sort((a, b) => b.orders[b.orders.length - 1].at.localeCompare(a.orders[a.orders.length - 1].at));
 }
 
 export async function loadDeal(programId: string, fresh: boolean): Promise<Deal | null> {
@@ -74,41 +100,7 @@ export async function loadDeal(programId: string, fresh: boolean): Promise<Deal 
     fresh ? selectRecordsFresh<Row>(LINKS, { fields: LINK_FIELDS, byId: true }) : readLinks(), readOrders(fresh), readQuoteList(fresh), getClients(),
   ]);
   const links = linkRows.map((r) => toLink(r.id, r.fields)).filter((l) => l.program === programId);
-  const linkIds = new Set(links.map((l) => l.linkId));
-  const props = new Set(proposalIds(payload));
-  const mine = orders.filter((o) => (o.source.kind === "link" ? linkIds.has(o.source.id) : props.has(o.source.id)));
-  const byPhone = new Map((clients.ok ? clients.data : []).map((c) => [phoneKey(c.phone), c] as const));
-
-  const groups = new Map<string, OrderInfo[]>();
-  for (const o of mine.sort((a, b) => a.at.localeCompare(b.at))) {
-    const key = customerKey(o.phone, o.who);
-    groups.set(key, [...(groups.get(key) ?? []), o]);
-  }
-  const customers = [...groups].map(([key, list]): Customer => {
-    const last = list[list.length - 1];
-    const client = byPhone.get(phoneKey(last.phone));
-    const req = splitRequester(last.who);
-    const company = client?.name || exclusiveFor(last.memo) || req.company || "이름 없는 주문";
-    const person = req.person || (req.company !== company ? req.company : "") || client?.ceo || "";
-    const base = baseOf(list, quotes);
-    const quote = base ? customerQuote(quotes, base) : null;
-    const pending = list.filter((o) => !inChain(o.draft, base)).length;
-    const first = list[0].at.slice(0, 10);
-    const candidates = base ? [] : [...new Map(nonDeleted(quotes)
-      .filter((q) => (phoneKey(text(q.fields[Q.phone])) && phoneKey(text(q.fields[Q.phone])) === phoneKey(last.phone)) || sameCompany(text(q.fields[Q.company]), company))
-      .filter((q) => text(q.fields[Q.issued]) >= first)
-      .map((q) => [quoteBase(q.number), q] as const)).keys()]
-      .map((b) => latestRevision(nonDeleted(quotes), b)!).filter(Boolean)
-      .map((q) => ({ number: q.number, status: q.status, total: q.total, issued: text(q.fields[Q.issued]) }));
-    return {
-      key, company, person, phone: last.phone,
-      via: [...new Set(list.map((o) => (o.source.kind === "link" ? links.find((l) => l.linkId === o.source.id)?.title || "주문 링크" : "카톡 제안서")))],
-      orders: list, amount: list.reduce((a, o) => a + o.total, 0), quote, pending, candidates,
-      lines: quote ? quote.lines : mergeLines(list.map((o) => o.lines)),
-    };
-  });
-  customers.sort((a, b) => b.orders[b.orders.length - 1].at.localeCompare(a.orders[a.orders.length - 1].at));
-  return { programId, payload, links, customers };
+  return { programId, payload, links, customers: buildCustomers(payload, links, orders, quotes, clients.ok ? clients.data : []) };
 }
 
 async function freshCustomer(programId: string, key: string) {
@@ -196,7 +188,7 @@ export async function mergeCustomer(programId: string, key: string, who: MemberN
     const { c, quotes } = got;
     const byNo = new Map(quotes.map((q) => [q.number, q]));
     const base = c.quote ? quoteBase(c.quote.number) : "";
-    const added = c.orders.filter((o) => !inChain(o.draft, base));
+    const added = c.orders.filter((o) => c.pendingIds.includes(o.id));
     const ownDrafts = (os: OrderInfo[], except = "") => [...new Set(os.map((o) => o.draft).filter(Boolean))]
       .map((n) => byNo.get(n)).filter((q): q is Quote => !!q && q.status === "작성" && !q.deleted && q.number !== except);
 
@@ -258,43 +250,29 @@ export async function mergeCustomer(programId: string, key: string, who: MemberN
   }
 }
 
-/** 견적 없이 들어온 주문을 이미 있는 견적(손으로 만든 견적)에 묶는다. 후보로 보인 견적만 받는다. */
-export async function attachQuote(programId: string, key: string, number: string): Promise<Result<{ number: string }>> {
-  try {
-    const got = await freshCustomer(programId, key);
-    if ("error" in got) return fail(got.error!);
-    const hit = got.c.candidates.find((q) => q.number === number);
-    if (!hit) return fail("이 회사의 견적 후보가 아닙니다. 새로고침해 주세요.");
-    const base = quoteBase(number);
-    await updateRecords<Row>(REQUESTS, got.c.orders.map((o) => ({ id: o.id, fields: { [R.draft]: base } })));
-    return ok({ number: hit.number });
-  } catch (e) {
-    return fail(message(e, "견적에 묶지 못했다"));
-  }
-}
-
 /**
- * 주문 뒤 카톡·전화로 바뀐 내용 → 그 회사 견적. '작성'이면 그대로 고치고, 보냈으면 수정본(-R…)을 만든다.
- * 판매 상태(수주확정 이후)·재고 차감 뒤에는 막는다. 바꾼 이유는 작업메모에 '주문변경'으로 남는다.
+ * 따라가지 않는 자동 초안(아직 '작성', 보낸 적 없음)을 삭제함으로 숨긴다 — 견적서 목록에 같은 주문이 두 장 보이지 않게.
+ * 되살릴 수 있다(삭제함). 보낸 견적은 거래 기록이라 건드리지 않는다.
  */
-export async function editCustomerQuote(programId: string, key: string, lines: EditLine[], reason: string, who: MemberName): Promise<Result<{ number: string; created: boolean }>> {
+export async function hideOtherDrafts(programId: string, key: string, who: MemberName): Promise<Result<{ hidden: number }>> {
   try {
     const got = await freshCustomer(programId, key);
     if ("error" in got) return fail(got.error!);
     const { c, quotes } = got;
-    if (!c.quote) return fail("먼저 [견적서로 묶기]로 견적을 만드세요.");
-    const q = quotes.find((x) => x.number === c.quote!.number)!;
-    if (isSale(q.status) || q.deducted) return fail(`견적 ${q.number}은 이미 ${q.status}입니다. 수주확정 뒤 변경은 견적서 생성기에서 수정본으로 고쳐 주세요.`);
-    const totals = quoteTotals(lines, text(q.fields[Q.tax]) === "과세" ? "과세" : "면세");
-    const detail = `${reason} · ${changeSummary(quoteLines(q.fields), lines)} · 합계 ₩${num(q.fields[Q.total]).toLocaleString("en-US")}→₩${totals.total.toLocaleString("en-US")}`;
-    if (q.status === "작성") {
-      const m = moneyFields(q, lines);
-      await updateRecord<Row>(QUOTES, q.id, { ...m.fields, ...clientFix(q, c), [Q.memo]: prependMemo(text(q.fields[Q.memo]), memoLine(new Date(), who, "주문변경", detail)) });
-      return ok({ number: q.number, created: false });
-    }
-    return ok({ number: await createRevision(q, quotes, lines, who, "주문변경", detail, c), created: true });
+    if (!c.quote) return fail("따라갈 견적이 없습니다.");
+    const ids = new Set(c.others.filter((o) => o.auto).map((o) => o.id));
+    const drafts = quotes.filter((q) => ids.has(q.id) && q.status === "작성" && !q.deleted);
+    if (!drafts.length) return ok({ hidden: 0 });
+    await updateRecords<Row>(QUOTES, drafts.map((q) => ({
+      id: q.id,
+      fields: {
+        [Q.deleted]: true, [Q.deletedBy]: who, [Q.deletedAt]: new Date().toISOString(), [Q.deletedReason]: `최신 견적 ${c.quote!.number}을 따름(안 쓰는 자동 초안)`,
+        [Q.memo]: prependMemo(text(q.fields[Q.memo]), memoLine(new Date(), who, "정리", `최신 견적 ${c.quote!.number}을 따름 · 삭제함`)),
+      },
+    })));
+    return ok({ hidden: drafts.length });
   } catch (e) {
-    return fail(message(e, "주문 변경을 저장하지 못했다"));
+    return fail(message(e, "초안을 정리하지 못했다"));
   }
 }
 
@@ -308,7 +286,7 @@ export async function deductCustomer(programId: string, key: string, who: Member
     if ("error" in got) return fail(got.error!);
     const { deal, c, quotes } = got;
     if (!c.quote) return fail("먼저 [견적서로 묶기]로 견적을 만드세요.");
-    const q = quotes.find((x) => x.number === c.quote!.number)!;
+    const q = quotes.find((x) => x.id === c.quote!.id)!;
     if (!isSale(q.status)) return fail(`견적 ${q.number}이 아직 판매 상태가 아닙니다(${q.status}). 견적서에서 수주확정한 뒤 빼세요.`);
     if (q.deducted) return fail(`이미 ${q.deducted.slice(0, 16).replace("T", " ")}에 뺐습니다.`);
     const { list, unmatched } = deductions(q.lines, deal.payload);

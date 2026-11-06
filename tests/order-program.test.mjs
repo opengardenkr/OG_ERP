@@ -84,21 +84,12 @@ test('공동수입 링크(src)는 items 없이도 읽고, ERP가 품목을 쓰�
   assert.equal(parsePayload(JSON.stringify({ v: 1 })), null);
 });
 
-test('주문 변경: 수량 0은 빼고, 이름 없는 줄은 거절, 요약은 바뀐 것만', async () => {
-  const { readEditLines, nextRevisionNo, quoteTotals, changeSummary } = await import('../src/lib/order-program.ts');
-  const r = readEditLines([{ name: '세일러맨', spec: '12/14', qty: 2700, price: 500 }, { name: '타히티', spec: '16/18', qty: 0, price: 1200 }, { name: '', spec: '', qty: 0, price: 0 }]);
-  assert.deepEqual(r, { ok: true, lines: [{ name: '세일러맨', spec: '12/14', qty: 2700, price: 500 }] });
-  assert.equal(readEditLines([{ name: '', qty: 3, price: 1 }]).ok, false);
-  assert.equal(readEditLines([{ name: 'a', qty: 1.5, price: 1 }]).ok, false);
-  assert.equal(readEditLines([{ name: 'a', qty: 0, price: 1 }]).ok, false);
+test('수정본 번호와 합계', async () => {
+  const { nextRevisionNo, quoteTotals } = await import('../src/lib/order-program.ts');
   assert.deepEqual(nextRevisionNo(['OG-1-001', 'OG-1-001-R2', 'OG-1-001-R5', 'OG-1-0011-R9'], 'OG-1-001'), { number: 'OG-1-001-R6', revision: 6 });
   assert.deepEqual(nextRevisionNo(['OG-1-001'], 'OG-1-001'), { number: 'OG-1-001-R2', revision: 2 });
   assert.deepEqual(quoteTotals([{ name: 'a', spec: '', qty: 10, price: 1000 }], '과세'), { count: 1, qty: 10, supply: 10000, vat: 1000, total: 11000 });
   assert.equal(quoteTotals([{ name: 'a', spec: '', qty: 10, price: 1000 }], '면세').vat, 0);
-  const before = [{ name: '세일러맨', spec: '12/14', qty: 2100, price: 500 }, { name: '타히티', spec: '16/18', qty: 875, price: 1200 }];
-  const after = [{ name: '세일러맨', spec: '12/14', qty: 2700, price: 500 }, { name: '뉴욕', spec: '10/+', qty: 1000, price: 600 }];
-  assert.equal(changeSummary(before, after), '세일러맨 2,100→2,700, +뉴욕 10/+ 1,000, −타히티 16/18');
-  assert.equal(changeSummary(before, before), '내용 그대로');
 });
 
 test('주문한 곳 찾기: 링크·제안서 출처, 상호/성함, 같은 회사 = 같은 번호', async () => {
@@ -139,4 +130,34 @@ test('수정본 따라가기는 앞부분이 같은 번호만 (길이만 같은 
   const rows = [{ number: 'OG-20261102-001' }, { number: 'OG-20261029-001-R6' }, { number: 'OG-20261102-001-R2' }];
   assert.equal(latestRevision(rows, 'OG-20261102-001').number, 'OG-20261102-001-R2');
   assert.equal(latestRevision([{ number: 'OG-20261029-001-R6' }], 'OG-20261102-001'), null);
+});
+
+test('회사는 최신 견적을 따라간다: 손으로 만든 견적이 자동 초안을 이긴다 (금성농원 항공 건)', async () => {
+  const { followQuote, pendingOrders } = await import('../src/lib/order-program.ts');
+  const p = { v: 1, items: [
+    { k: 'a', grp: '수선화', name: '세일러맨', rows: [['12/14', '2,800+', 500, 0]] },
+    { k: 'b', grp: '수선화', name: '더치마스터', rows: [['16/18', '9,360+', 1000, 0]] },
+  ] };
+  const q = (over) => ({ status: '발송', at: '', issued: '', phone: '010-5755-6653', company: '금성농원', deal: '일반', deleted: false, lines: [{ name: '수선화 세일러맨', spec: '12/14', qty: 5100, price: 500 }], ...over });
+  const quotes = [
+    q({ number: 'OG-20261102-001', status: '작성', company: '김희준', at: '2026-11-02T08:04:47Z', issued: '2026-11-02' }), // 자동 초안(상호·성함 뒤바뀜)
+    q({ number: 'OG-20261103-001', at: '2026-11-03T08:22:25Z', issued: '2026-11-03' }),
+    q({ number: 'OG-20261103-001-R3', at: '2026-11-06T06:10:37Z', issued: '2026-11-06' }),
+    q({ number: 'OG-20261029-001-R6', phone: '010-7405-2007', company: '유니크가든', at: '2026-11-06T06:09:59Z', issued: '2026-11-06' }), // 남의 견적
+    q({ number: 'OG-20261104-001', at: '2026-11-04T01:00:00Z', issued: '2026-11-04', lines: [{ name: '라벤더', spec: 'P9', qty: 10, price: 1 }] }), // 다른 품목
+    q({ number: 'OG-20261105-001', at: '2026-11-05T01:00:00Z', issued: '2026-11-05', deal: '테스트' }),
+  ];
+  const r = followQuote(quotes, { phone: '01057556653', company: '금성농원', drafts: ['OG-20261102-001'], since: '2026-11-02' }, p);
+  assert.equal(r.current.number, 'OG-20261103-001-R3');
+  assert.deepEqual(r.others.map((x) => x.number), ['OG-20261102-001']);
+  assert.equal(r.auto, false);
+  const orders = [{ at: '2026-11-02T08:00:00Z', draft: 'OG-20261102-001' }, { at: '2026-11-07T01:00:00Z', draft: 'OG-20261107-001' }];
+  assert.deepEqual(pendingOrders(orders, r.current, r.auto).map((o) => o.draft), ['OG-20261107-001']); // 견적 뒤에 들어온 주문만
+
+  // 자동 초안만 있으면 그걸 따르고, 다른 주문은 아직 안 들어간 것
+  const only = followQuote(quotes.slice(0, 1), { phone: '01057556653', company: '금성농원', drafts: ['OG-20261102-001'], since: '2026-11-02' }, p);
+  assert.equal(only.current.number, 'OG-20261102-001');
+  assert.equal(only.auto, true);
+  assert.equal(pendingOrders([{ at: '2026-11-01T00:00:00Z', draft: '' }, orders[0]], only.current, only.auto).length, 1);
+  assert.equal(followQuote([], { phone: '', company: 'x', drafts: [], since: '' }, p).current, null);
 });

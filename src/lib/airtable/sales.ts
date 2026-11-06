@@ -3,7 +3,7 @@ import "server-only";
 import { getRecordFresh, selectRecords, updateRecord } from "@/lib/airtable/client";
 import { fail, ok, type Result } from "@/lib/result";
 import {
-  applyPayment, costsPayload, isSale, matchKey, memoLine, parseCosts, parseLines, prependMemo, won,
+  applyPayment, costsPayload, isSale, matchKey, memoLine, oneSalePerChain, openQuotes, parseCosts, parseLines, prependMemo, won,
   type Sale,
 } from "@/lib/sales";
 
@@ -50,7 +50,17 @@ const message = (e: unknown, fallback: string) => (e instanceof Error ? e.messag
 
 export async function getSales(): Promise<Result<Sale[]>> {
   try {
-    return ok((await readQuotes()).filter((s) => isSale(s.status)));
+    return ok(oneSalePerChain(await readQuotes()));
+  } catch (e) {
+    return fail(message(e, "판매 기록을 불러오지 못했다"));
+  }
+}
+
+/** 매출 화면: 판매 + 보냈는데 판매로 안 바뀐 견적(상태를 안 바꾼 판매 찾기용) */
+export async function getSalesOverview(): Promise<Result<{ sales: Sale[]; open: Sale[] }>> {
+  try {
+    const all = await readQuotes();
+    return ok({ sales: oneSalePerChain(all), open: openQuotes(all) });
   } catch (e) {
     return fail(message(e, "판매 기록을 불러오지 못했다"));
   }

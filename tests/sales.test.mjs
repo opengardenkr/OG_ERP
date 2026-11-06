@@ -93,3 +93,16 @@ test('월별 매출: 수주일(없으면 발행일) 기준, 관계사·미수 �
   assert.equal(rows[0].vat, 100000);
   assert.equal(rows[2].due, 0);
 });
+
+test('판매는 묶음당 한 건, 판매로 안 잡힌 견적은 최신 수정본만', async () => {
+  const { oneSalePerChain, openQuotes } = await import('../src/lib/sales.ts');
+  const q = (number, status, issued = '2026-10-01') => sale({ id: number, number, status, issued });
+  const all = [
+    q('OG-1-001', '수주확정'), q('OG-1-001-R2', '출하완료'),          // 수정본마다 판매 → 한 건(R2)
+    q('OG-2-001', '발송'), q('OG-2-001-R4', '발송', '2026-10-09'),     // 안 바뀐 판매 후보 → R4
+    q('OG-3-001', '발송'), q('OG-3-001-R2', '출하완료'),              // 묶음에 판매가 있으면 빠짐
+    q('OG-4-001', '작성'), q('OG-5-001', '거절'), q('OG-6-001', '수락', '2026-10-20'),
+  ];
+  assert.deepEqual(oneSalePerChain(all).map((s) => s.number).sort(), ['OG-1-001-R2', 'OG-3-001-R2']);
+  assert.deepEqual(openQuotes(all).map((s) => s.number), ['OG-6-001', 'OG-2-001-R4']);
+});

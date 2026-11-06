@@ -213,3 +213,38 @@ export function monthlySummary(sales: Sale[]): MonthRow[] {
   }
   return [...map.values()].sort((a, b) => b.month.localeCompare(a.month));
 }
+
+// ── 견적 묶음(기준 번호 + 수정본 -R2…) ─────────────────────
+
+export const chainOf = (number: string) => number.replace(/-R\d+$/, "");
+const revOf = (number: string) => Number(number.match(/-R(\d+)$/)?.[1] ?? 1);
+
+/** 판매는 묶음마다 한 건: 판매 상태인 수정본 중 가장 최근 것. 수정본마다 수주확정해도 두 번 세지 않는다. */
+export function oneSalePerChain<T extends Pick<Sale, "number" | "status">>(quotes: T[]): T[] {
+  const best = new Map<string, T>();
+  for (const q of quotes) {
+    if (!isSale(q.status)) continue;
+    const k = chainOf(q.number), cur = best.get(k);
+    if (!cur || revOf(q.number) > revOf(cur.number)) best.set(k, q);
+  }
+  return [...best.values()];
+}
+
+/** 보냈는데 판매로 안 바뀐 견적의 상태. 작성(안 보냄)·거절·만료·취소·수정됨은 뺀다. */
+export const OPEN_STATES = ["발송", "수락", "보류", "발송보류"] as const;
+
+/**
+ * 판매로 안 잡힌 견적: 묶음의 최신 수정본이 보낸 상태이고, 묶음 어디에도 판매 상태가 없는 것.
+ * 실제로 판매했는데 견적서에서 상태를 안 바꾼 건을 찾는 목록이다.
+ */
+export function openQuotes<T extends Pick<Sale, "number" | "status" | "issued">>(quotes: T[]): T[] {
+  const chains = new Map<string, T[]>();
+  for (const q of quotes) chains.set(chainOf(q.number), [...(chains.get(chainOf(q.number)) ?? []), q]);
+  const out: T[] = [];
+  for (const list of chains.values()) {
+    if (list.some((q) => isSale(q.status))) continue;
+    const latest = [...list].sort((a, b) => revOf(b.number) - revOf(a.number))[0];
+    if ((OPEN_STATES as readonly string[]).includes(latest.status)) out.push(latest);
+  }
+  return out.sort((a, b) => b.issued.localeCompare(a.issued));
+}

@@ -78,7 +78,7 @@ function ProgramList({ programs }: { programs: ProgramSummary[] }) {
               {p.status === "보관" ? <span className="chip">보관</span> : null}
             </span>
             <span className="mt-1 block text-xs text-muted">
-              {p.items ? `품목 ${p.items}종` : "품목 웹에서 읽음"} · 배포 {p.links}곳 · 받은 주문 {p.orders}건{p.amount ? ` · ${won(p.amount)}` : ""}
+              {p.items ? `품목 ${p.items}종` : "품목 웹에서 읽음"} · 배포 {p.links}곳 · 주문 {p.customers}곳{p.amount ? ` · ${won(p.amount)}` : ""}
             </span>
           </Link>
         </li>
