@@ -2,8 +2,8 @@ import "server-only";
 
 import { unstable_cache } from "next/cache";
 import {
-  GROUP_INFO, ORDER_GROUPS, SITE, linkPayload, linkUrl, newLinkId, orderSummary, requestNo, lineAmount,
-  type DirectInput, type LinkInput, type OrderGroup, type OrderItem, type Prices,
+  GROUP_INFO, ORDER_GROUPS, SITE, orderSummary, requestNo, lineAmount,
+  type DirectInput, type OrderGroup, type OrderItem, type Prices,
 } from "@/lib/order";
 import type { MemberName } from "@/config/users";
 
@@ -11,7 +11,7 @@ import type { MemberName } from "@/config/users";
  * '주문' 화면의 Airtable 경계.
  * - 품목 목록·사진은 웹사이트 카탈로그 API(공개 품목만, 가격 없음)를 그대로 쓴다 — 카탈로그 선택과 같은 원천.
  * - 가격·재고는 여기서 라인업 표 4개를 직접 읽어 레코드 ID로 붙인다. 로그인한 직원 화면에만 나간다.
- * - 쓰기는 2곳: [영업] 주문 링크(고객 링크), 견적요청(직원 직접 접수).
+ * - 쓰기는 견적요청(직원 직접 접수) 하나. 고객 링크는 주문서에서 회사별로 배포한다(order-programs.ts).
  * 필드는 ID로 부른다 — 여러 표의 SKU 이름 앞에 보이지 않는 BOM 문자가 있다.
  */
 
@@ -27,12 +27,6 @@ const PRICE_SOURCES: Record<OrderGroup, PriceSource> = {
   hbm: { table: "tblm8bjSeDCflcIzk", formula: '{Status}="공급확정(260713 HBM 회신)"', base: "fldxHd06Gupotaj6N", stock: "fldKw75cYWnc4nSuW" },
 };
 
-const LINK_TABLE = "tbl93mrTsG1IsuFxQ"; // [영업] 주문 링크
-const L = {
-  id: "fldQCUWu9EOsbUiYh", title: "fldYfnhpKeszp9cQz", customer: "fldL7PcPMwAPfwJGu", phone: "fldiCkG6ut9h4O1Yv",
-  items: "fldNQStXwVIQUHwwj", min: "fldhAQfABDEOjzb6Q", date: "flda0UPGBrXXhMRey", status: "fldwdqHacxGXwd6RT",
-  author: "fldCVKViUNzQmuz19", memo: "fldt7o3g960vHTY2n",
-};
 const QUOTE_TABLE = "tbllSGZWApKiMTNOK"; // 견적요청 (웹 접수와 같은 표)
 const Q = {
   no: "fldNOX7urTPifKrQf", name: "fldB2XhLjxxE5tHwx", memo: "fldNfM5HhjGT7Cdn7", summary: "fldxxk1XNpWGP7p3K",
@@ -133,18 +127,6 @@ async function create(table: string, fields: Record<string, unknown>, what: stri
   return ((await response.json()) as { records: Raw[] }).records[0];
 }
 
-export async function createOrderLink(input: LinkInput, author: MemberName) {
-  const id = newLinkId();
-  const payload = JSON.stringify(linkPayload(input.lines, input.prefill));
-  if (payload.length > 90_000) throw new Error("품목이 너무 많습니다. 나눠서 링크를 만들어 주세요.");
-  await create(LINK_TABLE, {
-    [L.id]: id, [L.title]: input.title, [L.customer]: input.customer || null, [L.phone]: input.phone || null,
-    [L.items]: payload, [L.min]: input.minOrder || null, [L.date]: input.basisDate || null, [L.status]: "사용",
-    [L.author]: author, [L.memo]: input.memo || null,
-  }, "주문 링크 저장");
-  return { id, url: linkUrl(id) };
-}
-
 export async function createDirectOrder(input: DirectInput, author: MemberName) {
   const no = requestNo(new Date());
   const total = input.lines.reduce((s, l) => s + lineAmount(l), 0);
@@ -152,7 +134,7 @@ export async function createDirectOrder(input: DirectInput, author: MemberName) 
   await create(QUOTE_TABLE, {
     [Q.no]: no, [Q.name]: input.customer, [Q.phone]: input.phone || null, [Q.memo]: memo,
     [Q.summary]: orderSummary(input.lines),
-    [Q.json]: JSON.stringify(input.lines.map((l) => ({ sku: `${l.group}:${l.id}`, kname: l.kname, size: l.size, qty: l.qty, price: l.price }))),
+    [Q.json]: JSON.stringify(input.lines.map((l) => ({ sku: `${l.group}:${l.id}`, kname: `${l.kname} @₩${l.price.toLocaleString("en-US")}`, size: l.size, qty: l.qty, price: l.price }))),
     [Q.status]: "신규", [Q.at]: new Date().toISOString(),
   }, "주문 접수");
   return { requestNo: no, total };

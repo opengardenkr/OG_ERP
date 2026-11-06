@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickPrice, newLinkId, readLinkInput, readDirectInput, linkPayload, orderSummary, requestNo } from '../src/lib/order.ts';
+import { pickPrice, newLinkId, readDirectInput, linkPayload, orderSummary, requestNo } from '../src/lib/order.ts';
+import { readProgramInput } from '../src/lib/order.ts';
 
 const line = (over = {}) => ({ group: 'preorder', id: 'recAAAAAAAAAAAAAA', kname: '퍼플 센세이션', sname: 'Allium', cat: '알리움', photo: true, size: '12/14', price: 500, stock: 2400, qty: 300, ...over });
 
@@ -16,15 +17,17 @@ test('link ids are 22 url-safe characters and do not repeat', () => {
   for (const id of ids) assert.match(id, /^[A-Za-z0-9_-]{22}$/);
 });
 
-test('link input is cleaned and rejects bad lines', () => {
-  const ok = readLinkInput({ customer: ' 유니크가든 ', phone: '010-7405-2007', minOrder: 1000000, basisDate: '2026-10-30', lines: [line()] });
+test('program input is cleaned and rejects bad lines', () => {
+  const ok = readProgramInput({ name: ' 구근 가을 ', minOrder: 1000000, basis: 'air', lines: [line()] });
   assert.equal(ok.ok, true);
-  assert.equal(ok.value.title, '오픈가든 주문서');
-  assert.equal(ok.value.customer, '유니크가든');
-  assert.equal(readLinkInput({ lines: [] }).ok, false);
-  assert.equal(readLinkInput({ lines: [line({ id: '../x' })] }).ok, false);
-  assert.equal(readLinkInput({ lines: [line({ price: 0 })] }).ok, false);
-  assert.equal(readLinkInput({ phone: '12', lines: [line()] }).ok, false);
+  assert.equal(ok.value.name, '구근 가을');
+  assert.equal(ok.value.basis, 'air');
+  assert.equal(ok.value.id, '');
+  assert.equal(readProgramInput({ name: 'x', basis: 'nope', lines: [line()] }).value.basis, 'base');
+  assert.equal(readProgramInput({ lines: [line()] }).ok, false);
+  assert.equal(readProgramInput({ name: 'x', lines: [] }).ok, false);
+  assert.equal(readProgramInput({ name: 'x', lines: [line({ id: '../x' })] }).ok, false);
+  assert.equal(readProgramInput({ name: 'x', lines: [line({ price: 0 })] }).ok, false);
 });
 
 test('direct order needs a customer and quantities', () => {

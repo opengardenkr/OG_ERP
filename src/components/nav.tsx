@@ -25,7 +25,9 @@ export function Nav() {
         const active =
           item.href === "/"
             ? pathname === "/"
-            : pathname === item.href || (item.href !== "/catalog" && pathname.startsWith(`${item.href}/`));
+            : item.href === "/catalog"
+              ? pathname === "/catalog" || (pathname.startsWith("/catalog/") && !pathname.startsWith("/catalog/manage"))
+              : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
         return (
           <Link

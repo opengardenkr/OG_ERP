@@ -7,6 +7,9 @@ export const metadata = {
 };
 
 const updates = [
+  { title: "주문서 폴더", desc: "주문 화면에서 고른 품목을 주문서(폴더)로 저장하고, 회사마다 링크를 배포해요. 주문서를 고치면 배포한 링크도 함께 바뀌고, 회사별 받은 주문을 견적서 하나로 합칠 수 있어요.", stage: "2026-11-06 반영", ok: true },
+  { title: "매출 · 미수금", desc: "수주확정 이후 판매의 받을 돈을 거래처별로 봐요. 입금이 들어오면 [입금 기록]으로 남겨요. 마진은 대표만 봐요.", stage: "2026-11-06 반영", ok: true },
+  { title: "거래처", desc: "연락처·명함 사진·영업일지·견적을 거래처마다 한 화면에서 봐요.", stage: "2026-11-06 반영", ok: true },
   { title: "식물 고유번호", desc: "국내 54종에 OG-P 번호가 생겼고, 규격별 상품 59건과 연결했어요.", stage: "Airtable 적용 완료", ok: true },
   { title: "사진 카탈로그", desc: "사진 갤러리에 로고 사진 API와 검색·ERP 전달 기능을 통합하는 웹사이트 PR을 준비했어요.", stage: "별도 웹사이트 PR · 운영 미반영", ok: false },
   { title: "사진 워터마크", desc: "사진 파일에 오픈가든 로고를 합성하는 웹사이트 기능입니다. ERP와 별도로 반영해야 해요.", stage: "별도 웹사이트 PR · 운영 미반영", ok: false },
@@ -40,7 +43,7 @@ export default function UpdatesPage() {
         <Link className="btn" href="/proposal">제안서 →</Link>
         <Link className="btn" href="/catalog">주문 →</Link>
       </div>
-      <p className="mt-4 text-xs text-muted">사진 카탈로그·워터마크·검색 노출 개선은 별도 웹사이트 작업입니다. ERP의 업데이트 확인 버튼은 새로 배포된 버전을 확인하며, 별도 웹사이트 기능을 설치하지 않습니다. 주문 화면에서 품목·수량을 골라 고객 주문 링크를 만들거나 바로 접수합니다.</p>
+      <p className="mt-4 text-xs text-muted">사진 카탈로그·워터마크·검색 노출 개선은 별도 웹사이트 작업입니다. ERP의 업데이트 확인 버튼은 새로 배포된 버전을 확인하며, 별도 웹사이트 기능을 설치하지 않습니다. 주문 화면에서 주문서를 저장해 회사마다 링크를 배포하거나, 품목을 골라 바로 접수합니다.</p>
     </AppShell>
   );
 }

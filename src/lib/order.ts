@@ -1,6 +1,6 @@
 /**
  * '주문' 화면의 순수 규칙. 서버·화면·테스트가 함께 쓴다(server-only 아님).
- * 카탈로그 → 수량 입력 → (1) 고객 주문 링크 만들기 / (2) 직원이 바로 주문 접수.
+ * 카탈로그 → 수량 입력 → (1) 주문서로 저장(회사별 링크 배포는 order-program.ts) / (2) 직원이 바로 주문 접수 / (3) 견적서로.
  */
 
 export const ORDER_GROUPS = ["immediate", "preorder", "hoogenraad", "hbm"] as const;
@@ -54,18 +54,14 @@ export type OrderLine = {
   size: string; price: number; stock: number | null; qty: number;
 };
 
-export type LinkInput = {
-  title: string; customer: string; phone: string; minOrder: number; memo: string;
-  basisDate: string; prefill: boolean; lines: OrderLine[];
-};
 export type DirectInput = { customer: string; phone: string; memo: string; lines: OrderLine[] };
 
-type Check<T> = { ok: true; value: T } | { ok: false; message: string };
+export type Check<T> = { ok: true; value: T } | { ok: false; message: string };
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/[\x00-\x09\x0b-\x1f]/g, "").trim().slice(0, max) : "");
 const intOr = (v: unknown, fallback: number | null) => (Number.isInteger(v) && (v as number) >= 0 ? (v as number) : fallback);
 
-function readLines(raw: unknown, needQty: boolean): Check<OrderLine[]> {
+export function readLines(raw: unknown, needQty: boolean): Check<OrderLine[]> {
   if (!Array.isArray(raw) || raw.length === 0) return { ok: false, message: "품목을 하나 이상 골라 주세요." };
   if (raw.length > 120) return { ok: false, message: "한 번에 120개 규격까지 담을 수 있습니다." };
   const lines: OrderLine[] = [];
@@ -86,23 +82,6 @@ function readLines(raw: unknown, needQty: boolean): Check<OrderLine[]> {
     lines.push(line);
   }
   return { ok: true, value: lines };
-}
-
-export function readLinkInput(raw: unknown): Check<LinkInput> {
-  const b = (raw ?? {}) as Record<string, unknown>;
-  const lines = readLines(b.lines, false);
-  if (!lines.ok) return lines;
-  const phone = str(b.phone, 30);
-  if (phone && phone.replace(/\D/g, "").length < 9) return { ok: false, message: "연락처를 확인해 주세요." };
-  const basisDate = str(b.basisDate, 10);
-  return {
-    ok: true,
-    value: {
-      title: str(b.title, 60) || "오픈가든 주문서", customer: str(b.customer, 60), phone,
-      minOrder: Math.min(intOr(b.minOrder, 0) as number, 10_000_000_000), memo: typeof b.memo === "string" ? b.memo.slice(0, 1000) : "",
-      basisDate: /^\d{4}-\d{2}-\d{2}$/.test(basisDate) ? basisDate : "", prefill: b.prefill === true, lines: lines.value,
-    },
-  };
 }
 
 export function readDirectInput(raw: unknown): Check<DirectInput> {
@@ -147,4 +126,34 @@ export function orderSummary(lines: OrderLine[]): string {
 export function requestNo(now: Date, random: () => number = Math.random): string {
   const kst = new Date(now.getTime() + 9 * 3600_000).toISOString().slice(0, 10).replace(/-/g, "");
   return `Q-${kst}-${random().toString(36).slice(2, 5).toUpperCase().padEnd(3, "0")}`;
+}
+
+/** 주문서(폴더) 저장 입력. 주문 화면 → POST /api/order/programs */
+export type ProgramInput = { id: string; name: string; minOrder: number; memo: string; prefill: boolean; basis: PriceBasis; lines: OrderLine[] };
+/** 주문 화면에서 다시 고칠 때 쓰는 선택 상태. qty 키는 주문 화면과 같다: `group:rec|규격` */
+export type Selection = { v: 1; basis: PriceBasis; prefill: boolean; qty: Record<string, number> };
+
+export function readProgramInput(raw: unknown): Check<ProgramInput> {
+  const b = (raw ?? {}) as Record<string, unknown>;
+  const lines = readLines(b.lines, false);
+  if (!lines.ok) return lines;
+  const id = typeof b.id === "string" && /^rec[A-Za-z0-9]{14}$/.test(b.id) ? b.id : "";
+  const name = str(b.name, 60);
+  if (!name) return { ok: false, message: "주문서 이름을 적어 주세요." };
+  const min = Number(b.minOrder);
+  return {
+    ok: true,
+    value: {
+      id, name, minOrder: Number.isInteger(min) && min > 0 ? Math.min(min, 10_000_000_000) : 0,
+      memo: typeof b.memo === "string" ? b.memo.slice(0, 1000) : "", prefill: b.prefill === true,
+      basis: (PRICE_BASES as readonly string[]).includes(String(b.basis)) ? (b.basis as PriceBasis) : "base", lines: lines.value,
+    },
+  };
+}
+
+/** 링크가 읽는 품목JSON + 다시 고칠 때 쓸 선택 상태. 수량 0으로 고른 줄은 없다(화면이 수량으로 고른다) — 최소 1로 둔다. */
+export function programPayloads(input: ProgramInput): { items: ReturnType<typeof linkPayload>; selection: Selection } {
+  const qty: Record<string, number> = {};
+  for (const l of input.lines) qty[`${l.group}:${l.id}|${l.size}`] = Math.max(1, l.qty);
+  return { items: linkPayload(input.lines, input.prefill), selection: { v: 1, basis: input.basis, prefill: input.prefill, qty } };
 }

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { unstable_cache, updateTag } from "next/cache";
+import { revalidateTag, unstable_cache, updateTag } from "next/cache";
 
 /**
  * Airtable REST 호출은 전부 이 파일을 통과한다.
@@ -138,6 +138,19 @@ export async function selectRecords<F>(
 }
 
 /**
+ * 캐시 즉시 만료. updateTag는 서버 액션 안에서만 되고(읽기-자기쓰기 보장),
+ * API 라우트(주문 화면이 부른다)에서는 던진다 — 그때는 revalidateTag로 바로 만료시킨다.
+ * 쓰기는 이미 끝났으므로 여기서 실패를 밖으로 내보내면 안 된다.
+ */
+function expireTag(tag: string) {
+  try {
+    updateTag(tag);
+  } catch {
+    revalidateTag(tag, { expire: 0 });
+  }
+}
+
+/**
  * 레코드를 만들거나 고친다.
  * 쓰기 뒤에는 그 테이블의 캐시를 버린다 — 방금 한 일이 화면에 안 보이면
  * 사용자는 실패한 줄 알고 한 번 더 누른다.
@@ -168,8 +181,7 @@ async function mutate<F>(
   }
 
   const json = (await response.json()) as { records: AirtableRecord<F>[] };
-  // updateTag는 서버 액션 안에서 즉시 만료시킨다(읽기-자기쓰기 보장).
-  updateTag(tagOf(tableId));
+  expireTag(tagOf(tableId));
   return json.records;
 }
 
@@ -206,10 +218,11 @@ export async function getRecord<F>(
   tableId: string,
   id: string,
   revalidate: number,
+  byId = false,
 ): Promise<AirtableRecord<F> | null> {
   return unstable_cache(
-    () => getRecordFresh<F>(tableId, id),
-    ["airtable", tableId, id],
+    () => getRecordFresh<F>(tableId, id, byId),
+    ["airtable", tableId, id, byId ? "id" : "name"],
     { revalidate, tags: [tagOf(tableId)] },
   )();
 }
@@ -233,4 +246,25 @@ export async function updateRecord<F>(
     records: [{ id, fields }],
   });
   return record;
+}
+
+/**
+ * 캐시 없이 읽는다. 읽고-고쳐-쓰기(재고 차감, 견적 합산)에서만 쓴다.
+ * 화면 표시에는 selectRecords를 써라 — 호출 한도(5 req/s)가 있다.
+ */
+export async function selectRecordsFresh<F>(
+  tableId: string,
+  query: Omit<Query, "revalidate">,
+): Promise<AirtableRecord<F>[]> {
+  return fetchAll<F>(tableId, { ...query, revalidate: 0 });
+}
+
+/** 여러 줄을 한꺼번에 고친다. Airtable은 한 번에 10줄까지라 나눠 보낸다. */
+export async function updateRecords<F>(
+  tableId: string,
+  records: { id: string; fields: FieldValues<F> }[],
+): Promise<void> {
+  for (let i = 0; i < records.length; i += 10) {
+    await mutate<F>(tableId, "PATCH", { records: records.slice(i, i + 10) });
+  }
 }

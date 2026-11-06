@@ -119,7 +119,7 @@ button{cursor:pointer}
   <div class="acts">
     <button type="button" id="toQuote" disabled>견적서로</button>
     <button type="button" id="direct" disabled>주문 접수</button>
-    <button type="button" class="primary" id="link" disabled>고객 링크 만들기</button>
+    <button type="button" class="primary" id="link" disabled>주문서로 저장</button>
   </div>
 </div></div>
 <div class="sheet-bg" id="bg"></div>
@@ -131,7 +131,10 @@ button{cursor:pointer}
   'use strict';
   var GROUPS = { immediate:{label:'국내 농장',unit:'주',step:10}, preorder:{label:'구근 라인업',unit:'구',step:100}, hoogenraad:{label:'호게나르드',unit:'주',step:10}, hbm:{label:'HBM',unit:'구',step:100} };
   var BASIS = { base:'기본가', air:'항공판매가', gov:'관급가', pre:'사전예약가' };
-  var DRAFT = 'og-order-draft-v1', PAGE = 30;
+  // ?program=new(새 주문서) / ?program=rec…(그 주문서 고치기). 주문서마다 고르던 상태를 따로 둔다.
+  var PROGRAM = (new URLSearchParams(location.search).get('program') || '').match(/^(new|rec[A-Za-z0-9]{14})$/) ? new URLSearchParams(location.search).get('program') : '';
+  var DRAFT = 'og-order-draft-v1' + (PROGRAM ? ':' + PROGRAM : ''), PAGE = 30;
+  var program = { name: '', minOrder: 0, memo: '', prefill: false, missing: 0 };
   var $ = function(id){ return document.getElementById(id); };
   var fmt = function(n){ return Number(n).toLocaleString('ko-KR'); };
   var esc = function(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
@@ -209,7 +212,7 @@ button{cursor:pointer}
     if (!list.length) { empty.hidden = false; empty.className = 'empty'; empty.textContent = $('only').checked ? '고른 품목이 없습니다.' : '검색 결과가 없습니다.'; }
     else empty.hidden = true;
     var st = $('status'); st.className = 'status';
-    st.textContent = list.length + '개 품종 · ' + Math.min(list.length, visible) + '개 표시 · 가격 기준 ' + BASIS[basis] + (unpriced ? ' · 이 기준에 가격 없는 ' + unpriced + '개 숨김' : '');
+    st.textContent = (program.name ? '주문서 ‘' + program.name + '’ 고치는 중 · ' : PROGRAM === 'new' ? '새 주문서 · ' : '') + list.length + '개 품종 · ' + Math.min(list.length, visible) + '개 표시 · 가격 기준 ' + BASIS[basis] + (unpriced ? ' · 이 기준에 가격 없는 ' + unpriced + '개 숨김' : '');
   }
 
   function setQty(row, q){
@@ -281,36 +284,31 @@ button{cursor:pointer}
 
   $('link').addEventListener('click', function(){
     var st = updateBar(); if (!st.lines.length) return;
-    openSheet('<h2 id="sheetH">고객 주문 링크 만들기</h2><p class="sub">고른 ' + st.lines.length + '개 규격으로 고객용 주문서를 만듭니다. 고객이 수량을 넣어 보내면 견적요청으로 들어옵니다.</p>'
+    var editing = /^rec/.test(PROGRAM);
+    openSheet('<h2 id="sheetH">' + (editing ? '주문서 고치기' : '주문서로 저장') + '</h2><p class="sub">고른 ' + st.lines.length + '개 규격을 주문서(폴더)로 저장합니다. '
+      + (editing ? '이미 배포한 회사 링크도 함께 바뀝니다.' : '저장한 뒤 주문서에서 회사마다 링크를 배포합니다.') + '</p>'
+      + (program.missing ? '<p class="err">카탈로그에서 사라진 품목 ' + program.missing + '개는 이번 저장에서 빠집니다.</p>' : '')
       + summary(st, false)
       + '<form id="sheetForm" novalidate>'
-      + '<div class="two"><div class="field"><label for="lCust">거래처명 <small>넣으면 ○○ 전용 · 자동 입력</small></label><input id="lCust" maxlength="60" placeholder="예: 유니크가든"></div>'
-      + '<div class="field"><label for="lPhone">연락처 <small>자동 입력용</small></label><input id="lPhone" type="tel" inputmode="tel" maxlength="30" placeholder="010-0000-0000"></div></div>'
-      + '<div class="field"><label for="lTitle">제목</label><input id="lTitle" maxlength="60" placeholder="오픈가든 주문서"></div>'
-      + '<div class="two"><div class="field"><label for="lMin">최소 주문 금액 <small>원 · 없으면 비움</small></label><input id="lMin" inputmode="numeric" placeholder="예: 1000000"></div>'
-      + '<div class="field"><label for="lDate">재고 기준일</label><input id="lDate" type="date" value="' + today() + '"></div></div>'
-      + '<div class="field"><label for="lMemo">안내 문구 <small>한 줄에 하나 · **굵게**</small></label><textarea id="lMemo" maxlength="1000" placeholder="예: 운송비 별도&#10;**재고 소진 시 조기 마감**"></textarea></div>'
-      + '<label class="check"><input type="checkbox" id="lPre"><span>입력한 수량을 고객 화면에 미리 채우기 <small style="color:var(--gray)">(고객이 고칠 수 있음)</small></span></label>'
+      + '<div class="field"><label for="pName">주문서 이름 <em>*</em></label><input id="pName" maxlength="60" required placeholder="예: 호게나르드 26 F/W 라이너"></div>'
+      + '<div class="field"><label for="pMin">최소 주문 금액 <small>원 · 없으면 비움</small></label><input id="pMin" inputmode="numeric" placeholder="예: 1000000"></div>'
+      + '<div class="field"><label for="pMemo">안내 문구 <small>고객 화면 · 한 줄에 하나 · **굵게**</small></label><textarea id="pMemo" maxlength="1000" placeholder="예: 운송비 별도&#10;**재고 소진 시 조기 마감**"></textarea></div>'
+      + '<label class="check"><input type="checkbox" id="pPre"><span>입력한 수량을 고객 화면에 미리 채우기 <small style="color:var(--gray)">(고객이 고칠 수 있음)</small></span></label>'
       + '<p class="err" id="sheetErr" role="alert"></p>'
-      + '<div class="row2"><button type="button" class="ghost" data-close>닫기</button><button type="submit" class="send" id="sheetSend">링크 만들기</button></div></form>');
-    $('lCust').addEventListener('input', function(){ $('lTitle').placeholder = $('lCust').value.trim() ? $('lCust').value.trim() + ' 주문서' : '오픈가든 주문서'; });
+      + '<div class="row2"><button type="button" class="ghost" data-close>닫기</button><button type="submit" class="send" id="sheetSend">' + (editing ? '고친 내용 저장' : '주문서 저장') + '</button></div></form>');
+    $('pName').value = program.name; $('pMin').value = program.minOrder ? String(program.minOrder) : ''; $('pMemo').value = program.memo; $('pPre').checked = program.prefill;
     wire(function(){
-      var cust = $('lCust').value.trim();
-      return post('/api/order/links', {
-        title: $('lTitle').value.trim() || (cust ? cust + ' 주문서' : '오픈가든 주문서'), customer: cust, phone: $('lPhone').value.trim(),
-        minOrder: parseInt(($('lMin').value || '').replace(/\D/g, ''), 10) || 0, basisDate: $('lDate').value, memo: $('lMemo').value,
-        prefill: $('lPre').checked, lines: st.lines.map(payload),
+      var name = $('pName').value.trim();
+      if (!name) return Promise.reject(new Error('주문서 이름을 적어 주세요.'));
+      return post('/api/order/programs', {
+        id: editing ? PROGRAM : '', name: name, minOrder: parseInt(($('pMin').value || '').replace(/\D/g, ''), 10) || 0,
+        memo: $('pMemo').value, prefill: $('pPre').checked, basis: basis, lines: st.lines.map(payload),
       }).then(function(j){
-        openSheet('<div class="done"><h2 id="sheetH">주문 링크가 만들어졌습니다</h2><p>아래 링크를 고객 카톡방에 보내세요. 고객이 수량을 넣어 보내면 카톡 알림과 함께 견적요청에 쌓입니다.</p>'
-          + '<div class="url"><input id="lUrl" readonly value="' + esc(j.url) + '"><button type="button" id="lCopy">복사</button></div><p class="ok" id="lOk"></p>'
-          + '<div class="row2"><a class="ghost" href="' + esc(j.url) + '" target="_blank" rel="noopener">미리보기</a><button type="button" class="send" data-close>닫기</button></div>'
-          + '<p style="font-size:12px;color:var(--gray)">링크를 닫으려면 에어테이블 [영업] 주문 링크에서 상태를 \'마감\'으로 바꾸세요.</p></div>');
-        $('lCopy').addEventListener('click', function(){ copy(j.url, 'lOk'); });
-        $('lUrl').addEventListener('focus', function(){ this.select(); });
+        try { sessionStorage.removeItem(DRAFT); } catch (e) {}
+        window.top.location.href = '/catalog/' + j.id;
       });
     });
   });
-
   $('direct').addEventListener('click', function(){
     var st = updateBar(); if (!st.lines.length) return;
     openSheet('<h2 id="sheetH">주문 접수</h2><p class="sub">전화·카톡으로 받은 주문을 바로 기록합니다. 견적요청에 쌓이고 카톡 알림이 갑니다.</p>'
@@ -368,6 +366,23 @@ button{cursor:pointer}
     } catch (e) {}
   }
 
+  // 주문서 고치기: 저장해 둔 이름·조건·수량을 불러온다(이 브라우저에 고르던 상태가 있으면 그쪽이 먼저)
+  function loadProgram(){
+    if (!/^rec/.test(PROGRAM)) return Promise.resolve();
+    return fetch('/api/order/programs?id=' + encodeURIComponent(PROGRAM), { cache:'no-store' })
+      .then(function(r){ return r.json().then(function(j){ if (!r.ok) throw new Error(j.error || '주문서를 불러오지 못했습니다.'); return j; }); })
+      .then(function(j){
+        if (j.editable === false) throw new Error('사진·크레이트를 손으로 넣은 주문서라 여기서 고칠 수 없습니다. 주문서 화면으로 돌아가 주세요.');
+        program.name = j.name || ''; program.minOrder = j.minOrder || 0; program.memo = j.memo || '';
+        var sel = j.selection || { qty: {} };
+        program.prefill = !!sel.prefill;
+        var fresh = !Object.keys(qty).length;
+        if (fresh) { qty = {}; Object.keys(sel.qty || {}).forEach(function(k){ if (sel.qty[k] > 0) qty[k] = sel.qty[k]; }); if (BASIS[sel.basis]) { basis = sel.basis; $('basis').value = basis; } save(); }
+        program.missing = Object.keys(qty).filter(function(k){ return !byKey[k]; }).length;
+        $('only').checked = true;
+      })
+      .catch(function(e){ var st = $('status'); st.className = 'status err'; st.textContent = e.message; });
+  }
   function load(){
     var st = $('status'); st.className = 'status'; st.textContent = '카탈로그 불러오는 중…';
     fetch('/api/order/catalog', { cache:'no-store' })
@@ -375,8 +390,11 @@ button{cursor:pointer}
       .then(function(j){
         items = j.items || []; byKey = {};
         items.forEach(function(it){ it.options.forEach(function(o){ byKey[keyOf(it, o.size)] = { it: it, opt: o }; }); });
-        loaded = true; importSelection(); render(); updateBar();
-        if (!items.length) { $('empty').hidden = false; $('empty').className = 'empty'; $('empty').textContent = '카탈로그에 품목이 없습니다.'; }
+        loaded = true; importSelection();
+        return loadProgram().then(function(){
+          render(); updateBar();
+          if (!items.length) { $('empty').hidden = false; $('empty').className = 'empty'; $('empty').textContent = '카탈로그에 품목이 없습니다.'; }
+        });
       })
       .catch(function(e){
         st.className = 'status err'; st.textContent = e.message;
