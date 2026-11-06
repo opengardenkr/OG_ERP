@@ -109,7 +109,7 @@ export async function readOrders(fresh = false): Promise<OrderInfo[]> {
 export type QuoteLite = { id: string; number: string; status: string; deleted: boolean; total: number; deducted: string; at: string; lines: EditLine[]; memo: string };
 export async function readQuoteList(fresh = false): Promise<(QuoteLite & { fields: Row })[]> {
   const fields = Object.values(Q);
-  const rows = fresh ? await selectRecordsFresh<Row>(QUOTES, { fields, byId: true }) : await selectRecords<Row>(QUOTES, { fields: [Q.number, Q.status, Q.deleted, Q.total, Q.deducted, Q.at, Q.items, Q.memo], revalidate: 60, byId: true });
+  const rows = fresh ? await selectRecordsFresh<Row>(QUOTES, { fields, byId: true }) : await selectRecords<Row>(QUOTES, { fields: [Q.number, Q.status, Q.deleted, Q.total, Q.deducted, Q.at, Q.items, Q.memo, Q.phone, Q.company, Q.issued], revalidate: 60, byId: true });
   return rows.map((r) => ({
     id: r.id, number: text(r.fields[Q.number]), status: text(r.fields[Q.status]), deleted: r.fields[Q.deleted] === true,
     total: num(r.fields[Q.total]), deducted: text(r.fields[Q.deducted]), at: text(r.fields[Q.at]), fields: r.fields,

@@ -133,3 +133,10 @@ test('배정 현황: 견적 줄을 주문서 줄에 맞추고 "9,360+"는 이상
   assert.deepEqual([...r.qty], [['dm|16/18', 500], ['bb|7/8 잔량', 2500], ['rm|10/12', 700]]);
   assert.deepEqual(r.unmatched.map((l) => l.name), ['튤립 없음']);
 });
+
+test('수정본 따라가기는 앞부분이 같은 번호만 (길이만 같은 다른 견적은 아님)', async () => {
+  const { latestRevision } = await import('../src/lib/order-program.ts');
+  const rows = [{ number: 'OG-20261102-001' }, { number: 'OG-20261029-001-R6' }, { number: 'OG-20261102-001-R2' }];
+  assert.equal(latestRevision(rows, 'OG-20261102-001').number, 'OG-20261102-001-R2');
+  assert.equal(latestRevision([{ number: 'OG-20261029-001-R6' }], 'OG-20261102-001'), null);
+});

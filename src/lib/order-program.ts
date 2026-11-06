@@ -150,7 +150,8 @@ export function nextQuoteNo(numbers: string[], compact: string): string {
 
 /** 수정본까지 따라가 가장 최근 번호를 고른다: 기준 번호 또는 기준-R2, -R3… */
 export function latestRevision<T extends { number: string }>(rows: T[], base: string): T | null {
-  const rev = (n: string) => (n === base ? 1 : Number(n.slice(base.length).match(/^-R(\d+)$/)?.[1] ?? 0));
+  // 앞부분이 같은 번호만(OG-20261102-001과 OG-20261029-001-R6은 길이만 같다)
+  const rev = (n: string) => (n === base ? 1 : n.startsWith(base) ? Number(n.slice(base.length).match(/^-R(\d+)$/)?.[1] ?? 0) : 0);
   return rows.filter((r) => rev(r.number) > 0).sort((a, b) => rev(b.number) - rev(a.number))[0] ?? null;
 }
 
