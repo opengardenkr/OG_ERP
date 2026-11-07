@@ -35,7 +35,7 @@ export function PaymentForm({ id, balance, overpaid, paid, today, label = "입�
   const kinds: PayKind[] = only ? [only] : ["입금", ...(paid > 0 ? ["환불" as const] : []), ...(balance > 0 ? ["조정" as const] : [])];
   const suggest = kind === "환불" ? overpaid : kind === "입금" ? balance : 0;
   return (
-    <form action={action} data-og-saving={pending ? "true" : undefined} className="w-full space-y-1.5 rounded border border-line bg-canvas p-2 sm:w-auto">
+    <form action={action} data-og-saving={pending ? "true" : undefined} className="w-full basis-full space-y-1.5 rounded border border-line bg-canvas p-2">
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="kind" value={kind} />
       {kinds.length > 1 ? (
