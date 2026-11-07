@@ -119,6 +119,7 @@ function OpenQuotes({ open, sales }: { open: Sale[]; sales: Sale[] }) {
   if (!open.length) return null;
   const total = open.reduce((a, q) => a + q.total, 0);
   const hint = (q: Sale) => {
+    if (paidOf(q) > 0) return `받은 돈 ${won(paidOf(q))} — 판매일 가능성 높음`;
     const sold = sales.find((s) => s.company === q.company && s.total === q.total);
     if (sold) return `판매 ${sold.number}와 같은 금액`;
     const same = open.filter((x) => x.company === q.company && x.total === q.total).length;

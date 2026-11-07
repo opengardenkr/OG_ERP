@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  applyPayment, balanceOf, costLines, costsPayload, groupReceivables, learnedCosts, marginOf, matchKey, memoLine,
+  balanceOf, checkEntry, costLines, costsPayload, groupReceivables, learnedCosts, marginOf, matchKey, memoLine,
   parseLines, prependMemo, sameCompany,
 } from '../src/lib/sales.ts';
 
 const sale = (over = {}) => ({
   id: 'recAAAAAAAAAAAAAA', number: 'OG-1', issued: '2026-10-01', ordered: '', company: 'A농원', status: '완료',
-  dealType: '일반', total: 100000, supply: 100000, paid: 0, paidOn: '', payState: '', lines: [], costs: {}, ...over,
+  dealType: '일반', total: 100000, supply: 100000, paid: 0, paidOn: '', payState: '', lines: [], costs: {},
+  adjusted: 0, ledger: false, entries: [], ...over,
 });
 
 test('옛 완납 표시만 있는 건은 다 받은 것으로 본다', () => {
@@ -16,12 +17,45 @@ test('옛 완납 표시만 있는 건은 다 받은 것으로 본다', () => {
   assert.equal(balanceOf(sale({ paid: 30000, payState: '선금' })), 70000);
 });
 
-test('입금: 일부면 선금, 다 받으면 완납, 잔액 초과는 거절', () => {
-  assert.deepEqual(applyPayment(sale(), 40000), { ok: true, paid: 40000, payState: '선금' });
-  assert.deepEqual(applyPayment(sale({ paid: 40000 }), 60000), { ok: true, paid: 100000, payState: '완납' });
-  assert.equal(applyPayment(sale(), 1000000).ok, false);
-  assert.equal(applyPayment(sale(), 0).ok, false);
-  assert.equal(applyPayment(sale({ payState: '완납' }), 1).ok, false);
+test('장부 한 줄: 넘치는 금액은 거절, 실제로 더 받았으면 체크로 통과', () => {
+  assert.deepEqual(checkEntry(sale(), '입금', 40000), { ok: true, paid: 40000, adjusted: 0, balance: 60000, overpaid: 0 });
+  assert.equal(checkEntry(sale(), '입금', 1000000).ok, false);
+  assert.equal(checkEntry(sale(), '입금', 110000, true).overpaid, 10000);
+  assert.equal(checkEntry(sale(), '입금', 0).ok, false);
+  assert.equal(checkEntry(sale({ payState: '완납' }), '입금', 1).ok, false);
+  assert.equal(checkEntry(sale(), '환불', 1).ok, false); // 받은 돈이 없다
+  assert.equal(checkEntry(sale({ ledger: true, paid: 90000 }), '조정', 10001).ok, false);
+  assert.deepEqual(checkEntry(sale({ ledger: true, paid: 99000 }), '조정', 1000), { ok: true, paid: 99000, adjusted: 1000, balance: 0, overpaid: 0 });
+});
+
+test('나눠 받고, 수정본으로 금액이 줄면 돌려줄 돈, 환불하면 0 (장부는 묶음을 따라간다)', async () => {
+  const { withLedger, ledgerSum, overpaidOf, payStateOf, chainTarget } = await import('../src/lib/sales.ts');
+  const pay = (over) => ({ id: 'p', base: 'OG-1-001', kind: '입금', amount: 0, date: '', method: '', company: '', memo: '', who: '이시형', at: '', canceled: false, ...over });
+  const book = [
+    pay({ id: 'a', amount: 3000000, date: '2026-11-01' }),
+    pay({ id: 'b', amount: 272500, date: '2026-11-07' }),
+    pay({ id: 'c', amount: 999999, date: '2026-11-07', canceled: true }), // 잘못 적어 취소한 줄
+    pay({ id: 'd', base: 'OG-2-001', amount: 50 }),
+  ];
+  assert.deepEqual(ledgerSum(book.filter((p) => p.base === 'OG-1-001')), { received: 3272500, refunded: 0, adjusted: 0, net: 3272500, lastDate: '2026-11-07' });
+  // 수정본 R3로 합계가 3,272,500 → 3,000,000으로 줄었다
+  const r3 = withLedger(sale({ number: 'OG-1-001-R3', total: 3000000 }), book);
+  assert.equal(r3.entries.length, 3);
+  assert.equal(balanceOf(r3), 0);
+  assert.equal(overpaidOf(r3), 272500);
+  assert.equal(payStateOf(r3), '완납');
+  assert.equal(checkEntry(r3, '환불', 300000).ok, false); // 돌려줄 돈보다 큼
+  const back = withLedger(r3, [...book, pay({ id: 'e', kind: '환불', amount: 272500, date: '2026-11-08' })]);
+  assert.equal(overpaidOf(back), 0);
+  assert.equal(back.paid, 3000000);
+  // 장부가 있으면 옛 '완납' 칸은 보지 않는다
+  assert.equal(balanceOf(withLedger(sale({ number: 'OG-2-001', payState: '완납' }), book)), 100000 - 50);
+  assert.equal(payStateOf(sale()), '미입금');
+  // 돈을 붙일 견적: 판매인 최신 수정본, 없으면 최신
+  const qs = [{ number: 'OG-1-001', status: '수주확정' }, { number: 'OG-1-001-R2', status: '발송' }, { number: 'OG-3-001', status: '발송' }, { number: 'OG-3-001-R2', status: '수락' }];
+  assert.equal(chainTarget(qs, 'OG-1-001').number, 'OG-1-001');
+  assert.equal(chainTarget(qs, 'OG-3-001').number, 'OG-3-001-R2');
+  assert.equal(chainTarget(qs, 'OG-9-001'), null);
 });
 
 test('미수금은 거래처별로 묶고 잔액 큰 곳이 위', () => {

@@ -1,6 +1,8 @@
 /**
  * 매출 화면(미수금·마진)의 규칙. 순수 함수 — 서버·화면·테스트 어디서나 쓴다.
- * 원천은 `견적서 발송 내역` 한 표다. 판매 1건 = 판매 상태인 견적 1장.
+ * 판매 = `견적서 발송 내역`의 견적 묶음(기준 번호 + 수정본) 하나. 돈은 `[영업] 입금` 장부가 원천이다(2026-11-07):
+ * 한 줄 = 입금 / 환불 / 조정 한 번. 나눠 받기·차액 돌려주기·끝전 깎기가 모두 줄을 더하는 일이다.
+ * 장부는 묶음 번호로 묶어서, 수정본(-R2…)이 새로 나와도 받은 돈이 따라간다.
  */
 
 /** 판매로 보는 상태. 발송·작성·수정됨 같은 견적 단계는 빠진다. */
@@ -18,22 +20,98 @@ export type Sale = {
   dealType: string;
   total: number; // 합계(부가세 포함)
   supply: number; // 공급가액
-  paid: number; // 입금액 누계
-  paidOn: string; // 입금일
+  paid: number; // 받은 돈(입금 − 환불). 장부가 없으면 옛 칸 입금액
+  paidOn: string; // 마지막 입금일
   payState: string; // 입금상태(옛 칸)
   lines: QuoteLine[];
   costs: Record<string, number>; // 원가JSON.lines
+  adjusted: number; // 조정(안 받기로 한 금액)
+  ledger: boolean; // 장부 줄이 있다(있으면 옛 칸을 보지 않는다)
+  entries: Payment[]; // 이 묶음의 장부 줄(취소 포함, 최근 순)
+};
+
+export const PAY_KINDS = ["입금", "환불", "조정"] as const;
+export type PayKind = (typeof PAY_KINDS)[number];
+export const PAY_METHODS = ["계좌이체", "카드", "현금", "기타"] as const;
+
+/** `[영업] 입금` 한 줄. 금액은 늘 양수 — 방향은 구분이 정한다. */
+export type Payment = {
+  id: string; base: string; kind: PayKind; amount: number; date: string; method: string;
+  company: string; memo: string; who: string; at: string; canceled: boolean;
 };
 
 export const isSale = (status: string) => (SALE_STATES as readonly string[]).includes(status);
 
-/** 받은 돈. 금액 칸이 생기기 전에 '완납'만 찍어 둔 건은 다 받은 것으로 본다. */
-export function paidOf(s: Pick<Sale, "paid" | "payState" | "total">): number {
+type Money = Pick<Sale, "paid" | "payState" | "total"> & Partial<Pick<Sale, "adjusted" | "ledger">>;
+
+/** 받은 돈. 장부가 있으면 장부(입금 − 환불). 없으면 옛 칸: 입금액, 그것도 없이 '완납'만 찍어 둔 건은 다 받은 것으로 본다. */
+export function paidOf(s: Money): number {
+  if (s.ledger) return s.paid;
   if (s.paid > 0) return s.paid;
   return s.payState === "완납" ? s.total : 0;
 }
 
-export const balanceOf = (s: Pick<Sale, "paid" | "payState" | "total">) => Math.max(0, s.total - paidOf(s));
+/** 받을 돈 = 합계 − 받은 돈 − 조정. 0 아래로는 안 내려간다(그건 돌려줄 돈). */
+export const balanceOf = (s: Money) => Math.max(0, s.total - paidOf(s) - (s.adjusted ?? 0));
+/** 돌려줄 돈: 받은 돈이 합계보다 많다(수정본으로 금액이 줄었거나 더 받았다). */
+export const overpaidOf = (s: Money) => Math.max(0, paidOf(s) + (s.adjusted ?? 0) - s.total);
+
+/** 장부 줄 합계. 취소한 줄은 빠진다. */
+export function ledgerSum(entries: Payment[]) {
+  const live = entries.filter((e) => !e.canceled);
+  const sum = (k: PayKind) => live.filter((e) => e.kind === k).reduce((a, e) => a + e.amount, 0);
+  const received = sum("입금"), refunded = sum("환불"), adjusted = sum("조정");
+  const lastDate = live.filter((e) => e.kind === "입금" && e.date).map((e) => e.date).sort().pop() ?? "";
+  return { received, refunded, adjusted, net: received - refunded, lastDate };
+}
+
+/** 판매(견적 한 장)에 그 묶음의 장부를 붙인다. */
+export function withLedger<T extends Sale>(s: T, payments: Payment[]): T {
+  const entries = payments.filter((p) => p.base === chainOf(s.number))
+    .sort((a, b) => (b.date || b.at.slice(0, 10)).localeCompare(a.date || a.at.slice(0, 10)) || b.at.localeCompare(a.at));
+  if (!entries.length) return { ...s, entries: [], ledger: false, adjusted: 0 };
+  const sum = ledgerSum(entries);
+  return { ...s, entries, ledger: true, paid: sum.net, adjusted: sum.adjusted, paidOn: sum.lastDate };
+}
+
+/** 입금상태(옛 칸) 거울: 장부를 적을 때 견적에도 같이 적어 둔다 — 견적서 화면에서도 보이게. */
+export function payStateOf(s: Money): "미입금" | "선금" | "완납" {
+  const paid = paidOf(s);
+  if (paid > 0 && balanceOf(s) === 0) return "완납";
+  return paid > 0 ? "선금" : "미입금";
+}
+
+export type EntryCheck = { ok: true; paid: number; adjusted: number; balance: number; overpaid: number } | { ok: false; error: string };
+
+/**
+ * 장부 한 줄을 더해도 되나. 오타(0 하나 더)를 막는 게 목적이라 넘치는 금액은 거절하고,
+ * 실제로 더 받았거나 더 돌려준 경우만 `over`(화면의 확인 체크)로 통과시킨다.
+ * - 입금: 받을 돈까지. 넘치면 돌려줄 돈으로 남는다.
+ * - 환불: 받은 돈까지(over 없이 돌려줄 돈까지). 반품·취소면 견적서 수정본으로 금액부터 줄인다.
+ * - 조정: 받을 돈까지(끝전·에누리·대손). over 없음.
+ */
+export function checkEntry(s: Money, kind: PayKind, amount: number, over = false): EntryCheck {
+  if (!Number.isInteger(amount) || amount <= 0) return { ok: false, error: "금액을 원 단위 숫자로 적어 주세요." };
+  const paid = paidOf(s), adjusted = s.adjusted ?? 0, balance = balanceOf(s), overpaid = overpaidOf(s);
+  let nextPaid = paid, nextAdj = adjusted;
+  if (kind === "입금") {
+    if (amount > balance && !over) {
+      return { ok: false, error: balance > 0 ? `받을 돈(${won(balance)})보다 큽니다. 실제로 더 받았으면 '더 받음'에 체크하세요.` : "받을 돈이 없습니다. 실제로 더 받았으면 '더 받음'에 체크하세요." };
+    }
+    nextPaid = paid + amount;
+  } else if (kind === "환불") {
+    if (amount > paid) return { ok: false, error: `받은 돈(${won(paid)})보다 많이 돌려줄 수 없습니다.` };
+    if (amount > overpaid && !over) {
+      return { ok: false, error: overpaid > 0 ? `돌려줄 돈(${won(overpaid)})보다 큽니다. 반품·취소면 견적서에서 수정본으로 금액을 먼저 줄이세요. 그래도 맞으면 체크하세요.` : "돌려줄 돈이 없습니다. 반품·취소면 견적서에서 수정본으로 금액을 먼저 줄이세요. 그래도 맞으면 체크하세요." };
+    }
+    nextPaid = paid - amount;
+  } else {
+    if (amount > balance) return { ok: false, error: `받을 돈(${won(balance)})까지만 조정할 수 있습니다.` };
+    nextAdj = adjusted + amount;
+  }
+  const next = { ...s, ledger: true, paid: nextPaid, adjusted: nextAdj };
+  return { ok: true, paid: nextPaid, adjusted: nextAdj, balance: balanceOf(next), overpaid: overpaidOf(next) };
+}
 
 /** 경과일의 기준일: 수주일, 없으면 발행일. */
 export const sinceOf = (s: Pick<Sale, "ordered" | "issued">) => s.ordered || s.issued;
@@ -62,17 +140,6 @@ export function groupReceivables(sales: Sale[], today: string): ReceivableGroup[
   const groups = [...map.values()];
   for (const g of groups) g.sales.sort((a, b) => b.age - a.age);
   return groups.sort((a, b) => b.balance - a.balance);
-}
-
-/** 입금 기록 결과. 금액이 잔액을 넘으면 거절한다(오타로 0 하나 더 붙이는 일이 흔하다). */
-export function applyPayment(s: Pick<Sale, "paid" | "payState" | "total">, amount: number):
-  { ok: true; paid: number; payState: "선금" | "완납" } | { ok: false; error: string } {
-  if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) return { ok: false, error: "입금액을 원 단위 숫자로 적어 주세요." };
-  const balance = balanceOf(s);
-  if (balance <= 0) return { ok: false, error: "이미 다 받은 건입니다." };
-  if (amount > balance) return { ok: false, error: `잔액(${won(balance)})보다 큽니다. 금액을 확인해 주세요.` };
-  const paid = paidOf(s) + amount;
-  return { ok: true, paid, payState: paid >= s.total ? "완납" : "선금" };
 }
 
 export const won = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
@@ -248,3 +315,13 @@ export function openQuotes<T extends Pick<Sale, "number" | "status" | "issued">>
   }
   return out.sort((a, b) => b.issued.localeCompare(a.issued));
 }
+
+/** 묶음에서 돈을 붙일 견적: 판매 상태인 최신 수정본, 없으면 최신 수정본. */
+export function chainTarget<T extends Pick<Sale, "number" | "status">>(quotes: T[], base: string): T | null {
+  const list = quotes.filter((q) => chainOf(q.number) === base);
+  const pick = (xs: T[]) => [...xs].sort((a, b) => revOf(b.number) - revOf(a.number))[0] ?? null;
+  return pick(list.filter((q) => isSale(q.status))) ?? pick(list);
+}
+
+/** 장부 한 줄을 받을 수 있는 견적 상태: 판매 + 보낸 견적(판매 전 선금) */
+export const canTakePayment = (status: string) => isSale(status) || (OPEN_STATES as readonly string[]).includes(status);
