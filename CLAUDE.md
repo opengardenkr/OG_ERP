@@ -234,7 +234,15 @@ grep -rniE "key|token|secret|Bearer|pat[A-Za-z0-9]{10}" public/tools/
 그 수정이 통째로 사라진다.** 문구·색은 찾아 바꿀 수 있어도 로직은
 건드리지 마라 — 압축된 코드에서 무엇이 함께 깨질지 예측할 수 없다.
 
-원본은 **배병준 로컬 PC**에 있고 다른 세션에서 만들었다(2026-09-22 확인).
+원본 사본을 2026-11-07에 받았다(배병준 PC의 `OpenGarden_Estimate`, Vite, 마지막 커밋 2026-09-10 `f9a2b46`,
+원래 원격 `BYEONGJUN33/OpenGarden_Estimate`). 옮길 곳은 `opengardenkr/OpenGarden_Estimate`(비공개) —
+같은 날 GitHub 계정 정지로 아직 못 올렸다.
+**이 원본은 ERP `quote.html`보다 뒤처져 있다.** 빌드하면 9/10 오전 버전(531KB)이 나오는데 ERP 것은 9/13 버전(622KB)이다.
+그 사이 9번의 수정(PDF 개편 1~4차·인장·설정 탭·이력 메뉴·문서 제목·**문서 3종: 견적서·발주서·거래명세서**)이
+원본 코드에 없다(원본 `src`에 '거래명세서'가 한 번도 안 나온다). 최신 원본을 찾을 때까지 **이 원본으로 다시 빌드하지 마라.**
+ERP에서 직접 고친 것(최신 원본에 넣어야 할 것, 2026-10-28): ① `</body>` 앞에 `<script src="/tools/catalog-selection.js">`·
+`<script src="/tools/quote-integration.js">` ② `main.ts`의 `fromLegacy` 맨 앞에 `'readForm'`, `'applyToForm'`
+(quote-integration.js가 부른다 — 마크업에서는 안 불러서 `check-handlers.mjs`에 외부 호출 예외가 필요하다).
 이 저장소에는 빌드 결과물만 있다. 그래서 여기서 `quote.html`을 고치라는
 요청이 오면 먼저 말해라 — 원본을 고쳐 다시 빌드하는 게 맞고,
 급하면 여기서 문구만 고치되 다음 빌드에 사라진다고 알려라.
