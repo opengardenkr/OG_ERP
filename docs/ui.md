@@ -25,6 +25,7 @@
 품종 관리 /catalog/manage   ← 옛 '현장 빠른등록'(/catalog/quick)을 합쳤다
 거래처    /clients          ← 연락처·명함·영업일지. 상세 /clients/[id]
 영업 지도 /sales-map
+외부 사이트 /external-sites ← 프로그램 표의 활성 외부 주소 모음(도슨트·웹사이트·관공서 지도)
 업데이트  /updates
 ```
 

@@ -12,6 +12,7 @@ const ITEMS = [
   { href: "/catalog/manage", label: "품종 관리" },
   { href: "/clients", label: "거래처" },
   { href: "/sales-map", label: "영업 지도" },
+  { href: "/external-sites", label: "외부 사이트" },
   { href: "/updates", label: "업데이트" },
 ] as const;
 
