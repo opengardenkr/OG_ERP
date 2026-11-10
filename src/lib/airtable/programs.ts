@@ -15,6 +15,7 @@ type Row = {
   노출순서: number;
   사용여부: boolean;
   새창열기: boolean;
+  "미리보기 이미지"?: string;
 };
 
 export type ProgramCategory = "영업" | "문서" | "재고" | "지도" | "기타";
@@ -30,6 +31,7 @@ export type Program = {
   category: ProgramCategory;
   order: number;
   newTab: boolean;
+  previewImage?: string;
 };
 
 /**
@@ -40,7 +42,7 @@ export type Program = {
 export async function getPrograms(): Promise<Result<Program[]>> {
   try {
     const records = await selectRecords<Row>(TABLE, {
-      fields: ["이름", "설명", "경로", "아이콘", "분류", "노출순서", "새창열기"],
+      fields: ["이름", "설명", "경로", "아이콘", "분류", "노출순서", "새창열기", "미리보기 이미지"],
       filterByFormula: "{사용여부} = TRUE()",
       sort: [{ field: "노출순서", direction: "asc" }],
       revalidate: 600,
@@ -57,6 +59,7 @@ export async function getPrograms(): Promise<Result<Program[]>> {
         category: (record.fields.분류 ?? "기타") as ProgramCategory,
         order: record.fields.노출순서 ?? 0,
         newTab: record.fields.새창열기 ?? false,
+        previewImage: record.fields["미리보기 이미지"]?.trim() || undefined,
       }));
 
     return ok(programs);

@@ -10,6 +10,9 @@ Base: `OpenGarden` / `appzLstFHtHcQlWSu` · 2026-10-29 `[영업] 제안서 조�
 | 프로그램 | `tblPMe2YBiKlgHBEN` | 홈 카드 목록. 사용여부=true, 노출순서 asc |
 | 할일 | `tblczfuo7BoHcmQou` | 오늘 화면 3구획. 읽기·쓰기 |
 
+`프로그램`에 2026-11-10 추가: `미리보기 이미지` (`fld7rQkORj8gI3jTN`, URL).
+외부 사이트 카드 썸네일 주소. 비우면 프로그램 아이콘으로 표시한다.
+
 ## 속명 제안서가 읽는 것 (2026-10-29, 읽기 전용)
 
 | 테이블 | ID | 읽는 것 |

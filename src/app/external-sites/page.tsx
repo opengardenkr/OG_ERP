@@ -26,7 +26,7 @@ async function ExternalSites() {
   if (sites.length === 0) {
     return <EmptyState message="등록된 외부 사이트가 없습니다." />;
   }
-  return <ProgramCards result={{ ok: true, data: sites }} />;
+  return <ProgramCards result={{ ok: true, data: sites }} showPreviews />;
 }
 
 export default function ExternalSitesPage() {
