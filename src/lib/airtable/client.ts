@@ -269,6 +269,25 @@ export async function updateRecords<F>(
   }
 }
 
+/**
+ * 첨부 칸에 파일 하나를 붙인다(Airtable 업로드 엔드포인트, base64, 5MB 한도). 원래 있던 첨부 뒤에 더해진다.
+ * 파일은 Airtable이 들고 있다 — 포털은 보관하지 않는다(원칙 2·3).
+ */
+export async function uploadAttachment(tableId: string, recordId: string, fieldId: string, file: File): Promise<void> {
+  const token = env("AIRTABLE_TOKEN");
+  const baseId = env("AIRTABLE_BASE_ID");
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const filename = file.name.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").slice(0, 120) || "file";
+  const response = await fetch(`https://content.airtable.com/v0/${baseId}/${recordId}/${fieldId}/uploadAttachment`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ contentType: file.type || "application/octet-stream", filename, file: bytes.toString("base64") }),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new AirtableError(`파일을 올리지 못했다 (${response.status})`);
+  expireTag(tagOf(tableId));
+}
+
 /** 레코드 하나를 지운다. 되살릴 수 없으므로 화면에서 한 번 더 묻고, 서버 액션이 조건(예: 보관 상태)을 다시 확인한 뒤에만 부른다. */
 export async function deleteRecord(tableId: string, id: string): Promise<void> {
   const token = env("AIRTABLE_TOKEN");

@@ -5,7 +5,8 @@ import { AppShell, Section } from "@/components/app-shell";
 import { EmptyState, ErrorState } from "@/components/data-state";
 import { clientAirtableUrl, getClient } from "@/lib/airtable/clients";
 import { getQuotesFor, quoteAirtableUrl } from "@/lib/airtable/sales";
-import { phoneDigits, type SalesLog } from "@/lib/client-types";
+import { ClientTaxCard } from "@/components/client-tax";
+import { bizNoValid, hometaxRows, phoneDigits, type SalesLog } from "@/lib/client-types";
 import { balanceOf, isSale, sameCompany, won } from "@/lib/sales";
 
 export const metadata = { title: "거래처 | 오픈가든", robots: { index: false, follow: false } };
@@ -42,11 +43,10 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="card space-y-1.5 p-3 text-sm">
           {c.address ? <p><span className="text-muted">주소 </span>{c.address}</p> : null}
-          {c.bizNo ? <p><span className="text-muted">사업자번호 </span>{c.bizNo}</p> : null}
           {c.email ? <p><span className="text-muted">이메일 </span>{c.email}</p> : null}
           {c.online ? <p className="text-muted">온라인 판매 중</p> : null}
           {c.notes ? <p className="whitespace-pre-wrap border-t border-line pt-2">{c.notes}</p> : null}
-          {!c.address && !c.bizNo && !c.email && !c.notes ? <p className="text-muted">등록된 정보가 없습니다.</p> : null}
+          {!c.address && !c.email && !c.notes ? <p className="text-muted">등록된 정보가 없습니다.</p> : null}
         </div>
         <div className="card p-3">
           <h2 className="section-title mb-2">명함</h2>
@@ -60,6 +60,13 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             </div>
           ) : <p className="text-sm text-muted">명함 사진이 없습니다.</p>}
         </div>
+      </div>
+
+      <div className="mt-3">
+        <ClientTaxCard
+          id={c.id} name={c.name} email={c.email} rows={hometaxRows(c)} bizNoOk={!c.bizNo || bizNoValid(c.bizNo)} certs={c.certs}
+          values={{ bizNo: c.bizNo, bizName: c.bizName, ceo: c.ceo, address: c.address, bizType: c.bizType, bizItem: c.bizItem, invoiceEmail: c.invoiceEmail }}
+        />
       </div>
 
       <Section title="견적·판매" action={<Link href="/sales/receivables" className="text-xs text-muted hover:text-ink">미수금 전체 →</Link>}>
