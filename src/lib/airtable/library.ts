@@ -4,6 +4,7 @@ import {
   AirtableError,
   createRecord,
   deleteRecord,
+  getRecordFresh,
   selectRecords,
   updateRecord,
 } from "@/lib/airtable/client";
@@ -43,10 +44,13 @@ export type LibraryItem = {
   title: string;
   description: string;
   category: LibraryCategory;
-  /** 파일을 여는 주소. 첨부면 Airtable URL(몇 시간 뒤 만료), 저장소 파일이면 /library/… */
+  /**
+   * 파일을 여는 주소. 만료되지 않는다 — 첨부면 `/library/<id>/file`(열 때마다 새 Airtable URL로 302),
+   * 저장소 파일이면 `/library/…` 그대로.
+   */
   fileUrl: string;
   fileName: string;
-  /** 1쪽 미리보기. 없으면 null — 카드는 제목만 보인다. */
+  /** 1쪽 미리보기 주소(`/library/<id>/thumb` 또는 저장소 경로). 없으면 null — 카드는 파일명만 보인다. */
   thumbUrl: string | null;
   date: string;
   author: string;
@@ -54,7 +58,7 @@ export type LibraryItem = {
 
 /**
  * 자료 목록. 사용여부가 켜진 행만, 등록일 내림차순.
- * 첨부 URL이 만료되므로 캐시는 5분.
+ * 화면에는 만료되는 Airtable URL을 내보내지 않는다 — 고정 주소(`/library/<id>/file`)만 준다. 캐시 10분.
  */
 export async function getLibrary(): Promise<Result<LibraryItem[]>> {
   try {
@@ -62,26 +66,29 @@ export async function getLibrary(): Promise<Result<LibraryItem[]>> {
       fields: ["제목", "설명", "분류", "파일", "경로", "미리보기경로", "등록일", "등록자"],
       filterByFormula: "{사용여부} = TRUE()",
       sort: [{ field: "등록일", direction: "desc" }],
-      revalidate: 300,
+      revalidate: 600,
     });
 
     const items = records.flatMap<LibraryItem>((record) => {
       const f = record.fields;
       const attachment = f.파일?.[0];
-      const fileUrl = attachment?.url ?? f.경로 ?? "";
-      if (!f.제목 || !fileUrl) return [];
+      const repoPath = f.경로?.trim() || null;
+      if (!f.제목 || (!attachment && !repoPath)) return [];
       const category = (LIBRARY_CATEGORIES as readonly string[]).includes(f.분류 ?? "")
         ? (f.분류 as LibraryCategory)
         : "내부";
+      // 첨부는 늘 고정 주소. 올린 직후 Airtable이 썸네일을 아직 안 만들었으면 그 주소가 404라
+      // 카드가 파일명으로 대신하고(LibraryThumb), 몇십 초 뒤 새로고침하면 미리보기가 뜬다.
+      const thumbUrl = attachment ? `/library/${record.id}/thumb` : f.미리보기경로?.trim() || null;
       return [
         {
           id: record.id,
           title: f.제목,
           description: f.설명 ?? "",
           category,
-          fileUrl,
-          fileName: attachment?.filename ?? fileUrl.split("/").pop() ?? "파일",
-          thumbUrl: attachment?.thumbnails?.large?.url ?? f.미리보기경로 ?? null,
+          fileUrl: attachment ? `/library/${record.id}/file` : repoPath!,
+          fileName: attachment?.filename ?? repoPath!.split("/").pop() ?? "파일",
+          thumbUrl,
           date: f.등록일 ?? "",
           author: f.등록자 ?? "",
         },
@@ -138,6 +145,19 @@ export async function addLibraryItem(input: {
   }
 
   await updateRecord<Row>(LIBRARY_TABLE, record.id, { 사용여부: true });
+}
+
+/**
+ * 고정 주소가 가리킬 지금의 Airtable URL. 캐시 없이 읽는다 — Airtable은 읽을 때마다 새 서명 URL을 준다.
+ * 첨부가 없고 저장소 경로만 있으면 그 경로. 없으면 null.
+ */
+export async function resolveLibraryUrl(id: string, kind: "file" | "thumb"): Promise<string | null> {
+  const record = await getRecordFresh<Row>(LIBRARY_TABLE, id);
+  if (!record) return null;
+  const f = record.fields;
+  const attachment = f.파일?.[0];
+  if (kind === "file") return attachment?.url ?? f.경로?.trim() ?? null;
+  return attachment?.thumbnails?.large?.url ?? f.미리보기경로?.trim() ?? null;
 }
 
 export async function removeLibraryItem(id: string): Promise<void> {

@@ -1,9 +1,9 @@
-/* eslint-disable @next/next/no-img-element -- 미리보기는 Airtable 첨부 URL(만료됨)이라 next/image 최적화 대상이 아니다 */
 import { Suspense } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { EmptyState, ErrorState } from "@/components/data-state";
 import { LibraryDelete } from "@/components/library-delete";
+import { LibraryThumb } from "@/components/library-thumb";
 import { LibraryUpload } from "@/components/library-upload";
 import { getLibrary, type LibraryCategory } from "@/lib/airtable/library";
 
@@ -40,16 +40,7 @@ async function LibraryGrid() {
             className="flex aspect-[3/4] items-center justify-center bg-canvas p-3"
             aria-label={`${item.title} 열기`}
           >
-            {item.thumbUrl ? (
-              <img
-                src={item.thumbUrl}
-                alt=""
-                loading="lazy"
-                className="max-h-full max-w-full border border-line bg-white object-contain shadow-sm"
-              />
-            ) : (
-              <span className="text-xs text-muted">{item.fileName}</span>
-            )}
+            <LibraryThumb src={item.thumbUrl} fileName={item.fileName} />
           </a>
           {/* 아래 배너: 제목 */}
           <div className="flex flex-1 flex-col gap-1 border-t border-line p-3">
