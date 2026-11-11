@@ -13,6 +13,7 @@ const ITEMS = [
   { href: "/clients", label: "거래처" },
   { href: "/sales-map", label: "영업 지도" },
   { href: "/library", label: "자료실" },
+  { href: "/links", label: "링크 · QR" },
   { href: "/external-sites", label: "외부 사이트" },
   { href: "/updates", label: "업데이트" },
 ] as const;

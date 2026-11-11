@@ -30,7 +30,8 @@ export const config = {
     //   api/auth  로그인 처리 자체
     //   login     로그인 화면
     //   _next     프레임워크 자산
+    //   r/        추적 링크(짧은 주소). 고객이 QR로 들어오는 문이라 로그인 없이 넘긴다
     //   favicon·탭 아이콘 (로그인 화면에서도 보여야 한다)
-    "/((?!api/auth|login|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png).*)",
+    "/((?!api/auth|login|r/|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png).*)",
   ],
 };
