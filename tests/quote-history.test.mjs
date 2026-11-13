@@ -11,7 +11,7 @@ test('history uses bounded pagination, whitelist, literal search, and never leak
  const params=new URL(calls[0].url).searchParams;
  assert.equal(params.get('pageSize'),'50');assert.equal(params.get('returnFieldsByFieldId'),'true');
  assert.equal(params.get('filterByFormula'),`AND(NOT({삭제함}),FIND(${JSON.stringify(query.toLowerCase())},LOWER({견적번호}&" "&{거래처명}))>0)`);
- assert.equal(params.getAll('fields[]').length,10);assert.equal(params.getAll('fields[]').includes('fld11Vy38j2SZgqIf'),false);
+ assert.equal(params.getAll('fields[]').length,14);assert.equal(params.getAll('fields[]').includes('fld11Vy38j2SZgqIf'),false);
  assert.equal(result.items[0].total,0);assert.equal(result.items[0].deleted,false);assert.equal(result.nextOffset,'itr/next');
  assert.ok(!JSON.stringify(result).includes('private'));assert.equal(calls[0].options.method,undefined);assert.equal(calls[0].options.cache,'no-store');
  await c.listQuoteHistory('',true,'itr/next');const next=new URL(calls[1].url).searchParams;

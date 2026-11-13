@@ -1,7 +1,7 @@
 "use server";
 
 import { isAdmin } from "@/config/users";
-import { cancelEntry, recordEntry, saveCosts } from "@/lib/airtable/sales";
+import { cancelEntry, issueSheet, recordEntry, saveCosts, shipSheet } from "@/lib/airtable/sales";
 import { PAY_KINDS, PAY_METHODS, type PayKind } from "@/lib/sales";
 import { auth } from "@/lib/auth";
 import { todayInSeoul } from "@/lib/date";
@@ -39,8 +39,9 @@ export async function recordEntryAction(_prev: SalesActionState, form: FormData)
       over: form.get("over") === "on",
     }, who);
     if (!r.ok) return { error: r.message };
-    const { balance, overpaid } = r.data;
-    return { error: null, done: `${kind}을 적었습니다. ${overpaid ? `돌려줄 돈 ₩${overpaid.toLocaleString("ko-KR")}` : balance ? `남은 돈 ₩${balance.toLocaleString("ko-KR")}` : "다 받았습니다."}` };
+    const { balance, overpaid, sheet } = r.data;
+    const rest = overpaid ? `돌려줄 돈 ₩${overpaid.toLocaleString("ko-KR")}` : balance ? `남은 돈 ₩${balance.toLocaleString("ko-KR")}` : "다 받았습니다.";
+    return { error: null, done: `${kind}을 적었습니다. ${rest}${sheet ? " 주문서를 발행했습니다(매출 › 주문서)." : ""}` };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "저장하지 못했습니다." };
   }
@@ -67,4 +68,31 @@ export async function saveCostsAction(_prev: SalesActionState, form: FormData): 
   for (const [k, v] of form.entries()) if (k.startsWith("cost:")) input[k.slice(5)] = String(v);
   const result = await saveCosts(id, input);
   return result.ok ? { error: null, done: "원가를 저장했습니다." } : { error: result.message };
+}
+
+/** 주문서 손으로 발행(후불 판매 등). 완납 건은 입금을 적을 때 저절로 발행된다. */
+export async function issueSheetAction(_prev: SalesActionState, form: FormData): Promise<SalesActionState> {
+  try {
+    const who = await member();
+    const id = String(form.get("id") ?? "");
+    if (!REC.test(id)) return { error: "잘못된 요청입니다." };
+    const r = await issueSheet(id, who);
+    return r.ok ? { error: null, done: `주문서 ${r.data.base}를 발행했습니다.` } : { error: r.message };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "발행하지 못했습니다." };
+  }
+}
+
+/** 출고 완료 / 출고 취소(잘못 누른 경우). */
+export async function shipSheetAction(_prev: SalesActionState, form: FormData): Promise<SalesActionState> {
+  try {
+    const who = await member();
+    const id = String(form.get("id") ?? "");
+    if (!REC.test(id)) return { error: "잘못된 요청입니다." };
+    const undo = form.get("undo") === "1";
+    const r = await shipSheet(id, who, undo);
+    return r.ok ? { error: null, done: undo ? "출고를 취소했습니다." : "출고 완료로 적었습니다." } : { error: r.message };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "저장하지 못했습니다." };
+  }
 }

@@ -140,3 +140,64 @@ test('판매는 묶음당 한 건, 판매로 안 잡힌 견적은 최신 수정�
   assert.deepEqual(oneSalePerChain(all).map((s) => s.number).sort(), ['OG-1-001-R2', 'OG-3-001-R2']);
   assert.deepEqual(openQuotes(all).map((s) => s.number), ['OG-6-001', 'OG-2-001-R4']);
 });
+
+// ── 주문서(가격 없음, 물류용) ──
+import {
+  confirmedStatus, deliveryOf, parseSnap, pickList, sheetChains, sheetNotes, sheetPages, shouldIssueSheet, toOrderSheet,
+} from '../src/lib/sales.ts';
+
+test('주문서는 다 받았을 때 묶음에 한 번만 낸다', () => {
+  assert.equal(shouldIssueSheet(sale({ ledger: true, paid: 100000 }), false), true);
+  assert.equal(shouldIssueSheet(sale({ ledger: true, paid: 100000 }), true), false); // 이미 냄
+  assert.equal(shouldIssueSheet(sale({ ledger: true, paid: 60000 }), false), false); // 덜 받음
+  assert.equal(shouldIssueSheet(sale({ ledger: true, paid: 99000, adjusted: 1000 }), false), true); // 끝전 조정
+  assert.equal(shouldIssueSheet(sale({ ledger: true, paid: 0, total: 0 }), false), false);
+  assert.equal(confirmedStatus('수락'), '수주확정');
+  assert.equal(confirmedStatus('발송'), '수주확정');
+  assert.equal(confirmedStatus('입고대기'), null);
+});
+
+test('주문서에는 돈 얘기를 싣지 않고 배송지는 따로 뽑는다', () => {
+  const snap = parseSnap(JSON.stringify({
+    client: { company: '금성농원', name: '김희준', phone: '010-0000-0000', address: '본사 주소' },
+    remarks: '[주문요청 Q-20261102-U13] 항공 즉시수배 구근\n요청하신 규격은 상위 규격으로 공급하며, 추가 비용은 없습니다.\n운임: 착불 (수령 시 운송업체에 직접 정산)\n배송지: 전남 나주시 어딘가 1\n단가 1,000원 기준',
+    unit: '구',
+  }));
+  assert.equal(deliveryOf(snap), '전남 나주시 어딘가 1');
+  assert.deepEqual(sheetNotes(snap), ['[주문요청 Q-20261102-U13] 항공 즉시수배 구근', '운임: 착불 (수령 시 운송업체에 직접 정산)']);
+  assert.equal(deliveryOf(parseSnap(JSON.stringify({ orderDeliveryPlace: '현장', remarks: '배송지: 다른 곳' }))), '현장');
+  assert.equal(deliveryOf(parseSnap(JSON.stringify({ client: { address: '주소만' } }))), '주소만');
+  assert.deepEqual(parseSnap('{깨짐'), {});
+
+  const s = toOrderSheet(sale({ number: 'OG-20261103-001-R3', lines: [{ name: '수선화', spec: '16/18', qty: 250, price: 1000 }] }), '2026-11-13T05:00:00.000Z', '', { snap: JSON.stringify(snap), person: '', phone: '' });
+  assert.equal(s.base, 'OG-20261103-001');
+  assert.equal(s.person, '김희준');
+  assert.equal(s.unit, '구');
+  assert.deepEqual(s.lines, [{ name: '수선화', spec: '16/18', qty: 250 }]);
+  assert.equal(JSON.stringify(s.lines).includes('price'), false);
+});
+
+test('주문서 현황: 발행 시각은 묶음 것, 품목은 최신 판매 수정본을 따른다', () => {
+  const quotes = [
+    sale({ id: 'recA', number: 'OG-1', status: '수정됨', sheetAt: '2026-11-10T00:00:00Z' }),
+    sale({ id: 'recB', number: 'OG-1-R2', status: '수주확정' }),
+    sale({ id: 'recC', number: 'OG-2', status: '수주확정' }),
+    sale({ id: 'recD', number: 'OG-3', status: '완료' }),
+    sale({ id: 'recE', number: 'OG-4', status: '발송' }),
+  ];
+  const { issued, waiting } = sheetChains(quotes);
+  assert.deepEqual(issued.map((c) => [c.base, c.target.id, c.sheetAt]), [['OG-1', 'recB', '2026-11-10T00:00:00Z']]);
+  assert.deepEqual(waiting.map((w) => w.id), ['recC']); // 완료·발송은 기다리지 않는다
+});
+
+test('품목별 합계는 출고 전 주문서만, 이름·규격이 같으면 더한다', () => {
+  const sh = (base, company, lines, shippedAt = '') => ({ id: base, base, number: base, company, person: '', phone: '', address: '', unit: '주', lines, notes: [], sheetAt: 'x', shippedAt, status: '수주확정', balance: 0 });
+  const rows = pickList([
+    sh('OG-1', 'A', [{ name: '목수국 라임라이트', spec: 'P9', qty: 100 }]),
+    sh('OG-2', 'B', [{ name: '목수국  라임라이트', spec: 'P9', qty: 50 }, { name: '병꽃나무', spec: 'P9', qty: 10 }]),
+    sh('OG-3', 'C', [{ name: '병꽃나무', spec: 'P9', qty: 999 }], '2026-11-12T00:00:00Z'),
+  ]);
+  assert.deepEqual(rows.map((r) => [r.name, r.qty, r.orders.length]), [['목수국 라임라이트', 150, 2], ['병꽃나무', 10, 1]]);
+  assert.equal(sheetPages([], 20).length, 1);
+  assert.deepEqual(sheetPages([1, 2, 3, 4, 5], 2).map((p) => p.length), [2, 2, 1]);
+});
