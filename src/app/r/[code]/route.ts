@@ -64,9 +64,36 @@ async function resolve(request: NextRequest, rawCode: string, count: boolean): P
     });
   }
 
+  // 카톡·페이스북 등 미리보기 로봇은 넘겨주기(302)를 따라가지 않는다 — 대상 페이지의 og 태그를 담은 200 페이지를 준다.
+  if (!prefetch && isBot(userAgent)) return preview(link.target);
+
   return new Response(null, {
     status: 302,
     headers: { Location: link.target, "Cache-Control": "no-store", "X-Robots-Tag": "noindex" },
+  });
+}
+
+const escapeAttr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** 미리보기 로봇용: 대상 페이지의 제목·og·twitter 태그를 옮겨 담은 작은 페이지. 대상을 못 읽어도 og:url은 남긴다. */
+async function preview(target: string): Promise<Response> {
+  let title = "";
+  let metas: string[] = [];
+  try {
+    const r = await fetch(target, { headers: { "user-agent": "kakaotalk-scrap/1.0" }, redirect: "follow", signal: AbortSignal.timeout(4000) });
+    if (r.ok) {
+      const html = (await r.text()).slice(0, 200_000);
+      title = html.match(/<title>[^<]{0,200}<\/title>/i)?.[0] ?? "";
+      metas = html.match(/<meta\s+(?:property|name)="(?:og:[a-z_:]+|twitter:[a-z_:]+|description)"\s+content="[^"]{0,1000}"\s*\/?>/gi) ?? [];
+    }
+  } catch {
+    /* 대상이 느리거나 막혀도 og:url만으로 로봇이 대상을 다시 읽는다 */
+  }
+  if (!metas.some((m) => /og:url/i.test(m))) metas.push(`<meta property="og:url" content="${escapeAttr(target)}">`);
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8">${title}${metas.join("")}<meta name="robots" content="noindex"><meta http-equiv="refresh" content="0;url=${escapeAttr(target)}"></head><body></body></html>`;
+  return new Response(html, {
+    status: 200,
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300", "X-Robots-Tag": "noindex" },
   });
 }
 
