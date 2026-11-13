@@ -1,0 +1,58 @@
+/* 주문서(가격 없음) 인쇄 양식 — 견적서 생성기 A4 양식(초록 머리띠·당사자 칸·품목 표)과 같은 모양. */
+.os-root { background: #e6e9e3; min-height: 100vh; padding-bottom: 24px; word-break: keep-all; }
+.os-toolbar { position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 16px; background: #1f2b1b; color: #fff; font-size: 13px; }
+.os-toolbar a { color: #b9c4b3; }
+.os-toolbar button { background: #fff; color: #1f2b1b; border: 0; border-radius: 3px; padding: 7px 14px; font: inherit; font-weight: 700; cursor: pointer; }
+.os-holder { overflow-x: auto; padding: 16px 8px; }
+
+.os-page { width: 198mm; min-height: 285mm; box-sizing: border-box; background: #fff; color: #20241f; display: flex; flex-direction: column; margin: 0 auto 16px; box-shadow: 0 4px 24px rgba(0, 0, 0, .12); font-size: 11px; line-height: 1.4; }
+.os-page * { box-sizing: border-box; }
+.os-top { display: grid; grid-template-columns: 43mm 1fr 52mm; align-items: center; gap: 4mm; padding: 4.5mm 9mm; background: linear-gradient(125deg, #15370f 0%, #27591b 48%, #3f7630 100%); color: #fff; }
+.os-brand { display: flex; align-items: center; gap: 3mm; }
+.os-brand img { width: 19mm; height: 19mm; object-fit: contain; filter: brightness(0) invert(1); }
+.os-brand b { display: block; font-size: 10px; letter-spacing: 1.3px; }
+.os-brand span { display: block; font-size: 9px; opacity: .85; }
+.os-title { text-align: center; font-size: 26px; font-weight: 800; letter-spacing: 10px; }
+.os-meta { border-collapse: collapse; font-size: 9.5px; width: 100%; }
+.os-meta th { text-align: left; font-weight: 600; opacity: .8; padding: .6mm 2mm .6mm 0; white-space: nowrap; }
+.os-meta td { font-weight: 700; padding: .6mm 0; }
+
+.os-parties { display: grid; grid-template-columns: 1.35fr 1fr; margin: 4mm 9mm 3mm; border: 1.4px solid #333; }
+.os-party { display: grid; grid-template-columns: 9mm 1fr; min-width: 0; }
+.os-party + .os-party { border-left: 1.4px solid #333; }
+.os-party-title { display: flex; align-items: center; justify-content: center; padding: 1mm; border-right: 1px solid #555; background: #eef0eb; font-size: 9.5px; font-weight: 800; line-height: 1.7; writing-mode: vertical-rl; letter-spacing: 2px; }
+.os-grid { display: grid; grid-template-columns: 15mm 1fr; }
+.os-grid span { padding: 1.6mm 2mm; background: #f6f7f4; border-bottom: 1px solid #c9ccc6; border-right: 1px solid #c9ccc6; font-size: 9.5px; color: #4f554d; }
+.os-grid b { padding: 1.6mm 2.4mm; border-bottom: 1px solid #c9ccc6; font-size: 10.5px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.os-grid .last { border-bottom: 0; }
+
+.os-body { flex: 1 1 auto; display: flex; flex-direction: column; }
+.os-items { width: calc(100% - 18mm); margin: 0 9mm; border-collapse: collapse; table-layout: fixed; border: 1.4px solid #30352e; }
+.os-items th, .os-items td { border: 1px solid #6d726b; }
+.os-items th { height: 7mm; padding: 1.2mm; background: #315d25; color: #fff; font-size: 10px; font-weight: 700; text-align: center; }
+.os-items tbody tr { height: 6.4mm; }
+.os-items td { padding: .8mm 2mm; font-size: 10.5px; vertical-align: middle; }
+.os-no { width: 9mm; text-align: center; }
+.os-spec { width: 26mm; text-align: center; }
+.os-qty { width: 22mm; text-align: right; font-weight: 700; }
+.os-unit { width: 11mm; text-align: center; }
+.os-check { width: 16mm; text-align: center; color: #6d726b; }
+.os-items tfoot td { background: #f2f3ef; font-weight: 700; }
+
+.os-remarks { display: grid; grid-template-columns: 20mm 1fr; margin: 3mm 9mm 0; border: 1px solid #555; min-height: 12mm; }
+.os-remarks b { display: flex; align-items: center; justify-content: center; background: #f2f3ef; border-right: 1px solid #777; letter-spacing: 3px; }
+.os-remarks span { padding: 2.2mm 3mm; white-space: pre-wrap; line-height: 1.55; color: #4f554d; }
+.os-sign { display: grid; grid-template-columns: repeat(3, 1fr); margin: 3mm 9mm 0; border: 1px solid #555; }
+.os-sign div { display: grid; grid-template-columns: 16mm 1fr; min-height: 11mm; }
+.os-sign div + div { border-left: 1px solid #777; }
+.os-sign b { display: flex; align-items: center; justify-content: center; background: #f2f3ef; border-right: 1px solid #777; font-size: 9.5px; }
+.os-foot { margin-top: auto; display: flex; justify-content: space-between; padding: 3mm 9mm 4mm; font-size: 9px; color: #6d726b; }
+
+@media print {
+  @page { size: A4; margin: 6mm; }
+  .os-root { background: none; padding: 0; }
+  .os-toolbar { display: none; }
+  .os-holder { padding: 0; overflow: visible; }
+  .os-page { width: auto; min-height: auto; height: 284mm; margin: 0; box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .os-page + .os-page { break-before: page; }
+}

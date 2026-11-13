@@ -28,6 +28,8 @@ export type Sale = {
   adjusted: number; // 조정(안 받기로 한 금액)
   ledger: boolean; // 장부 줄이 있다(있으면 옛 칸을 보지 않는다)
   entries: Payment[]; // 이 묶음의 장부 줄(취소 포함, 최근 순)
+  sheetAt?: string; // 주문서발행일시(가격 없는 물류용 주문서)
+  shippedAt?: string; // 출고일시
 };
 
 export const PAY_KINDS = ["입금", "환불", "조정"] as const;
@@ -325,3 +327,137 @@ export function chainTarget<T extends Pick<Sale, "number" | "status">>(quotes: T
 
 /** 장부 한 줄을 받을 수 있는 견적 상태: 판매 + 보낸 견적(판매 전 선금) */
 export const canTakePayment = (status: string) => isSale(status) || (OPEN_STATES as readonly string[]).includes(status);
+
+// ── 주문서(가격 없음, 물류용) ─────────────────────────────
+// 견적 묶음 하나 = 주문서 하나. 다 받으면(완납) ERP가 발행하고, 현물이 오면 이 종이로 고르고 싸서 보낸다.
+// 가격·금액·계좌는 싣지 않는다 — 상자에 같이 넣어도 되는 종이다. 품목은 묶음의 최신 판매 수정본을 따라간다.
+
+/** 주문서를 기다리는 판매 상태. 출하완료·완료는 이미 끝난 일이라 뺀다. */
+export const SHEET_WAIT_STATES = ["수주확정", "입고대기", "출고대기"] as const;
+export const isSheetWaiting = (status: string) => (SHEET_WAIT_STATES as readonly string[]).includes(status);
+
+/** 다 받아서 주문서를 낼 때인가: 받을 돈 0, 받은 돈 있음, 묶음에 아직 주문서가 없음. */
+export function shouldIssueSheet(after: Money, chainHasSheet: boolean): boolean {
+  return !chainHasSheet && after.total > 0 && paidOf(after) > 0 && balanceOf(after) === 0;
+}
+
+/** 완납으로 확정할 때 바꿀 상태: 보낸 견적(발송·수락·보류·발송보류)이면 수주확정, 이미 판매면 그대로(null). */
+export const confirmedStatus = (status: string) => ((OPEN_STATES as readonly string[]).includes(status) ? "수주확정" : null);
+
+export type SheetLine = { name: string; spec: string; qty: number };
+
+export type OrderSheet = {
+  id: string; // 따라가는 견적(묶음의 최신 판매 수정본) 레코드
+  base: string; // 주문번호 = 견적 묶음 번호
+  number: string; // 따라가는 견적 번호
+  company: string; person: string; phone: string; address: string;
+  unit: string;
+  lines: SheetLine[];
+  notes: string[]; // 견적 비고 중 돈 얘기가 없는 줄
+  sheetAt: string; shippedAt: string; status: string;
+  balance: number; // 받을 돈 — 화면 경고용, 인쇄에는 싣지 않는다
+};
+
+type Snap = {
+  client?: { company?: unknown; name?: unknown; phone?: unknown; address?: unknown };
+  remarks?: unknown; unit?: unknown; orderDeliveryPlace?: unknown; items?: unknown;
+};
+
+export function parseSnap(raw: unknown): Snap {
+  if (typeof raw !== "string" || !raw.trim()) return {};
+  try {
+    const v = JSON.parse(raw) as unknown;
+    return v && typeof v === "object" ? (v as Snap) : {};
+  } catch {
+    return {};
+  }
+}
+
+const str = (v: unknown) => (typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : "");
+const DELIVERY = /^[·•\-\s]*(배송지|납품지|납품\s*장소|받는\s*곳|배송\s*주소)\s*[:：]\s*(.+)$/;
+/** 돈 얘기(가격·금액·계좌·세금)가 든 줄. 주문서에는 싣지 않는다. */
+const MONEY = /₩|\d[\d,]*\s*원|단가|금액|가격|비용|요금|할인|부가세|면세|과세|입금|계좌|결제|견적가|공급가|합계/;
+
+const remarkLines = (snap: Snap) => str(snap.remarks).split("\n").map((l) => l.trim()).filter(Boolean);
+
+/** 배송지: 견적의 납품 장소 → 비고의 '배송지:' 줄 → 공급받는 자 주소. */
+export function deliveryOf(snap: Snap): string {
+  const place = str(snap.orderDeliveryPlace);
+  if (place) return place;
+  for (const l of remarkLines(snap)) {
+    const m = l.match(DELIVERY);
+    if (m) return m[2].trim();
+  }
+  return str(snap.client?.address);
+}
+
+/** 주문서에 옮길 비고: 배송지 줄(따로 싣는다)과 돈 얘기가 든 줄은 뺀다. */
+export const sheetNotes = (snap: Snap) => remarkLines(snap).filter((l) => !DELIVERY.test(l) && !MONEY.test(l)).slice(0, 8);
+
+/** 견적 품목 → 주문서 줄(값은 버린다). 품목JSON이 비면 스냅샷의 품목. */
+export function sheetLines(sale: Pick<Sale, "lines">, snap: Snap): SheetLine[] {
+  const from = sale.lines.length ? sale.lines : parseLines(JSON.stringify({ items: Array.isArray(snap.items) ? snap.items : [] }));
+  return from.filter((l) => l.qty > 0).map((l) => ({ name: l.name, spec: l.spec, qty: l.qty }));
+}
+
+export type SheetDetail = { snap: unknown; person: string; phone: string };
+
+/** 판매(견적 한 장) + 스냅샷 → 주문서. */
+export function toOrderSheet(sale: Sale, chainSheetAt: string, chainShippedAt: string, d: SheetDetail): OrderSheet {
+  const snap = parseSnap(d.snap);
+  const c = snap.client ?? {};
+  return {
+    id: sale.id, base: chainOf(sale.number), number: sale.number,
+    company: sale.company || str(c.company), person: d.person || str(c.name), phone: d.phone || str(c.phone),
+    address: deliveryOf(snap), unit: str(snap.unit).slice(0, 4) || "주",
+    lines: sheetLines(sale, snap), notes: sheetNotes(snap),
+    sheetAt: chainSheetAt, shippedAt: chainShippedAt, status: sale.status, balance: balanceOf(sale),
+  };
+}
+
+export type SheetChain = { base: string; target: Sale; sheetAt: string; shippedAt: string };
+
+/**
+ * 견적 묶음별 주문서 현황. issued = 주문서를 낸 묶음(최근 발행 순), waiting = 판매인데 주문서가 아직 없는 묶음.
+ * 발행·출고 시각은 묶음 안 어느 수정본에 찍혀 있어도 묶음 것으로 본다(발행 뒤 수정본이 나와도 따라간다).
+ */
+export function sheetChains(quotes: Sale[]): { issued: SheetChain[]; waiting: Sale[] } {
+  const chains = new Map<string, Sale[]>();
+  for (const q of quotes) chains.set(chainOf(q.number), [...(chains.get(chainOf(q.number)) ?? []), q]);
+  const issued: SheetChain[] = [], waiting: Sale[] = [];
+  for (const [base, list] of chains) {
+    const target = chainTarget(list, base)!;
+    const latest = (k: "sheetAt" | "shippedAt") => list.map((q) => q[k] ?? "").filter(Boolean).sort().pop() ?? "";
+    const sheetAt = latest("sheetAt");
+    if (sheetAt) issued.push({ base, target, sheetAt, shippedAt: latest("shippedAt") });
+    else if (isSheetWaiting(target.status)) waiting.push(target);
+  }
+  issued.sort((a, b) => b.sheetAt.localeCompare(a.sheetAt));
+  waiting.sort((a, b) => sinceOf(b).localeCompare(sinceOf(a)));
+  return { issued, waiting };
+}
+
+export type PickRow = SheetLine & { unit: string; orders: { base: string; company: string; qty: number }[] };
+
+/** 출고 전 주문서의 품목별 합계(현물이 오면 이걸로 나눈다). 이름·규격이 같으면 더한다. */
+export function pickList(sheets: OrderSheet[]): PickRow[] {
+  const map = new Map<string, PickRow>();
+  for (const s of sheets) {
+    if (s.shippedAt) continue;
+    for (const l of s.lines) {
+      const k = matchKey(l.name, l.spec);
+      const row = map.get(k) ?? { name: l.name, spec: l.spec, qty: 0, unit: s.unit, orders: [] };
+      row.qty += l.qty;
+      row.orders.push({ base: s.base, company: s.company, qty: l.qty });
+      map.set(k, row);
+    }
+  }
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "ko") || a.spec.localeCompare(b.spec, "ko"));
+}
+
+/** 인쇄 쪽 나누기: 한 쪽 줄 수(기본 20)씩. 줄이 없어도 한 쪽. */
+export function sheetPages<T>(lines: T[], per = 20): T[][] {
+  const pages: T[][] = [];
+  for (let i = 0; i < Math.max(1, lines.length); i += per) pages.push(lines.slice(i, i + per));
+  return pages;
+}

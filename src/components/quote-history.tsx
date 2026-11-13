@@ -3,6 +3,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/modal';
 import type { QuoteHistoryItem } from '@/lib/airtable/quotes';
 
+/** ISO 시각 → 한국 시간 'MM-DD HH:mm' */
+const when = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d).map(x => [x.type, x.value]));
+  return `${p.month}-${p.day} ${p.hour}:${p.minute}`;
+};
+
 export function QuoteHistory() {
   const [items, setItems] = useState<QuoteHistoryItem[]>([]);
   const [query, setQuery] = useState(''), [includeDeleted, setIncludeDeleted] = useState(false);
@@ -66,6 +74,11 @@ export function QuoteHistory() {
         <button type="button" className="btn shrink-0" disabled={saving || loading} aria-label={`${item.number || item.company || '견적서'} ${item.deleted ? '복원' : '삭제'}`} onClick={() => { setSelected(item); setReason(''); setSaveError(''); }}>{item.deleted ? '복원' : '삭제'}</button>
       </div>
       <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm"><span>{item.total === null ? '금액 미입력' : item.total.toLocaleString('ko-KR') + '원'}</span><span className="text-muted">{[item.kind, item.status, item.author].filter(Boolean).join(' · ')}</span>{item.deleted && <span className="text-red-700">삭제됨</span>}</p>
+      {item.sentAt || item.customerKey ? <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+        <span>고객 발송 {item.sentAt ? when(item.sentAt) : '전'}</span>
+        {item.customerKey && <a className="text-brand underline" href={`https://open-garden.co.kr/q/${item.customerKey}`} target="_blank" rel="noopener noreferrer">고객이 보는 견적서</a>}
+        {item.reply && <span className={item.reply === '확정' ? 'font-semibold text-brand' : 'font-semibold text-amber-700'}>고객 {item.reply === '확정' ? '확정' : '수정 요청'}{item.replyAt ? ` ${when(item.replyAt)}` : ''}</span>}
+      </p> : null}
       {item.summary && <details className="mt-3 text-sm"><summary className="cursor-pointer text-muted">품목 요약</summary><p className="mt-2 whitespace-pre-wrap break-words">{item.summary}</p></details>}
       {item.deletedReason && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-muted">삭제 사유: {item.deletedReason}</p>}
     </li>)}</ul>

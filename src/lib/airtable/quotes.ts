@@ -24,11 +24,14 @@ const HISTORY = {
   kind: 'fldFtayOXs55xDwiq', total: 'fldskak7i2iuJOY8r', status: 'fldMMWnoJNwVCeKvp',
   summary: 'fld8BN5izEMtiJ6p6', author: 'fldqoY2KHfFtg6HDR', deleted: 'fldUDwBfzwcnftVsa',
   deletedReason: 'fldDzdTDIuDO4h9y3',
+  // 고객에게 자동 발행한 견적(웹 /q/<키>, 2026-11-11): 보낸 때·고객 응답
+  key: 'fldmjGIwKtzjZMOQe', sentAt: 'fld2NScAjXSDig9E6', reply: 'fld6cLeAPgdDtathq', replyAt: 'fldlpiJM79fAx7MxU',
 };
 export type QuoteHistoryItem = {
   id: string; number: string; date: string; company: string; kind: string;
   total: number | null; status: string; summary: string; author: string;
   deleted: boolean; deletedReason: string;
+  customerKey: string; sentAt: string; reply: string; replyAt: string;
 };
 export async function listQuoteHistory(query: string, includeDeleted: boolean, offset = '') {
   const token = process.env.AIRTABLE_TOKEN?.trim(), base = process.env.AIRTABLE_BASE_ID?.trim();
@@ -55,7 +58,8 @@ export async function listQuoteHistory(query: string, includeDeleted: boolean, o
     return { id: record.id, number: text('number'), date: text('date'), company: text('company'),
       kind: text('kind'), total: typeof f[HISTORY.total] === 'number' ? f[HISTORY.total] as number : null,
       status: text('status'), summary: text('summary'), author: text('author'),
-      deleted: f[HISTORY.deleted] === true, deletedReason: text('deletedReason') };
+      deleted: f[HISTORY.deleted] === true, deletedReason: text('deletedReason'),
+      customerKey: /^[A-Za-z0-9_-]{22}$/.test(text('key')) ? text('key') : '', sentAt: text('sentAt'), reply: text('reply'), replyAt: text('replyAt') };
   });
   return { items, nextOffset: data.offset || null };
 }
