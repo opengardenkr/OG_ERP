@@ -10,6 +10,7 @@ import { shortUrl } from "@/config/site";
 import { getLink, getScans, SCAN_READ_LIMIT } from "@/lib/airtable/links";
 import { todayInSeoul } from "@/lib/date";
 import { countryName, rangeOf, RANGES, summarize, type Share } from "@/lib/link-stats";
+import { QR_STYLES } from "@/lib/qr-design";
 
 export const metadata = {
   title: "링크 통계 | 오픈가든",
@@ -105,13 +106,20 @@ async function LinkDashboard({ id, range }: { id: string; range: string | undefi
             <LinkToggle id={link.id} active={link.active} />
           </div>
         </div>
-        <div className="flex flex-col items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element -- 로그인한 사람만 받는 내부 SVG라 next/image를 거치지 않는다 */}
-          <img src={`/links/${link.id}/qr`} alt={`${link.name} QR 코드`} width={148} height={148} className="rounded-[3px] border border-line bg-white" />
-          <div className="flex gap-2 text-xs">
-            <a href={`/links/${link.id}/qr?format=png&download=1`} className="btn !px-2 !py-1 !text-xs">PNG 받기</a>
-            <a href={`/links/${link.id}/qr?format=svg&download=1`} className="btn !px-2 !py-1 !text-xs">SVG 받기</a>
-          </div>
+        <div className="flex gap-3" aria-label="QR 디자인">
+          {QR_STYLES.map((style) => (
+            <figure key={style.id} className="flex w-[132px] flex-col items-center gap-1.5">
+              <div className="flex aspect-[4/5] w-full items-center justify-center rounded-[3px] border border-line bg-white p-1.5">
+                {/* eslint-disable-next-line @next/next/no-img-element -- 로그인한 사람만 받는 내부 SVG라 next/image를 거치지 않는다 */}
+                <img src={`/links/${link.id}/qr?style=${style.id}`} alt={`${link.name} QR 코드 · ${style.label}`} className="max-h-full w-full object-contain" />
+              </div>
+              <figcaption className="text-xs font-semibold text-muted">{style.label}</figcaption>
+              <div className="flex gap-1">
+                <a href={`/links/${link.id}/qr?style=${style.id}&format=png&download=1`} className="btn !px-2 !py-1 !text-xs">PNG</a>
+                <a href={`/links/${link.id}/qr?style=${style.id}&format=svg&download=1`} className="btn !px-2 !py-1 !text-xs">SVG</a>
+              </div>
+            </figure>
+          ))}
         </div>
       </div>
 

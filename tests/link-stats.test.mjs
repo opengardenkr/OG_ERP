@@ -82,3 +82,21 @@ test('요약: 1년은 달 단위 13칸 이하, 빈 기간도 칸은 있다', () 
   assert.equal(empty.last, null);
   assert.equal(empty.buckets.length, 30);
 });
+
+test('QR 디자인: 두 가지 모양, 로고 자리는 가운데·작게', async () => {
+  const { qrBody, qrStyleOf, qrSvg } = await import('../src/lib/qr-design.ts');
+  assert.equal(qrStyleOf('frame'), 'frame');
+  assert.equal(qrStyleOf('weird'), 'plain');
+  assert.equal(qrStyleOf(null), 'plain');
+  const url = 'https://app.open-garden.co.kr/r/ipark';
+  const assets = { logo: 'data:image/png;base64,AAAA', scanMe: { path: 'M0 0h10v10h-10z', width: 10, capHeight: 10 } };
+  const body = qrBody(url);
+  assert.equal((body.size - body.logo.length) % 2, 0); // 정가운데
+  assert.ok((body.logo.length / body.size) ** 2 < 0.08); // 가린 면적 8% 미만(H 복원 30% 안쪽)
+  const plain = qrSvg(url, 'plain', assets);
+  assert.equal(plain.width, plain.height);
+  assert.match(plain.svg, /xlink:href="data:image\/png;base64,/);
+  const frame = qrSvg(url, 'frame', assets);
+  assert.ok(frame.height > frame.width); // 위에 SCAN ME
+  assert.ok(!/<text/.test(frame.svg)); // 글자는 외곽선 — 글꼴 없이도 같은 모양
+});
