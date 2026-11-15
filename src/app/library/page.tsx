@@ -5,6 +5,7 @@ import { EmptyState, ErrorState } from "@/components/data-state";
 import { LibraryDelete } from "@/components/library-delete";
 import { LibraryThumb } from "@/components/library-thumb";
 import { LibraryUpload } from "@/components/library-upload";
+import { LibraryVersions } from "@/components/library-versions";
 import { getLibrary, type LibraryCategory } from "@/lib/airtable/library";
 
 export const metadata = {
@@ -32,16 +33,15 @@ async function LibraryGrid() {
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
       {result.data.map((item) => (
         <li key={item.id} className="card flex flex-col overflow-hidden">
-          {/* 작은 박스: 1쪽 미리보기 */}
-          <a
-            href={item.fileUrl}
-            target="_blank"
-            rel="noreferrer"
+          {/* 작은 박스: 1쪽 미리보기. 버전이 여럿이면 누를 때 날짜 목록 */}
+          <LibraryVersions
+            versions={item.versions}
+            latestUrl={item.fileUrl}
+            label={item.title}
             className="flex aspect-[3/4] items-center justify-center bg-canvas p-3"
-            aria-label={`${item.title} 열기`}
           >
             <LibraryThumb src={item.thumbUrl} fileName={item.fileName} />
-          </a>
+          </LibraryVersions>
           {/* 아래 배너: 제목 */}
           <div className="flex flex-1 flex-col gap-1 border-t border-line p-3">
             <div className="flex items-start justify-between gap-2">
@@ -52,7 +52,11 @@ async function LibraryGrid() {
             </div>
             {item.description ? <p className="text-xs leading-snug text-muted">{item.description}</p> : null}
             <div className="mt-auto flex items-center justify-between pt-1 text-[11px] text-faint">
-              <span>{item.date}{item.author ? ` · ${item.author}` : ""}</span>
+              <span>
+                {item.date}
+                {item.author ? ` · ${item.author}` : ""}
+                {item.versions.length > 1 ? ` · 버전 ${item.versions.length}` : ""}
+              </span>
               <span className="flex items-center gap-2">
                 <a href={item.fileUrl} download={item.fileName} className="text-muted hover:text-ink">다운로드</a>
                 <LibraryDelete id={item.id} title={item.title} />
@@ -65,12 +69,19 @@ async function LibraryGrid() {
   );
 }
 
+/** 올리기 폼에 "기존 자료의 새 버전" 선택지를 주려고 자료 목록(제목만)을 넘긴다. */
+async function LibraryUploadWithItems() {
+  const result = await getLibrary();
+  const items = result.ok ? result.data.map((i) => ({ id: i.id, title: i.title })) : [];
+  return <LibraryUpload items={items} />;
+}
+
 export default function LibraryPage() {
   return (
     <AppShell
       title="자료실"
-      subtitle="인쇄해서 쓰는 상담 시트·양식. 카드를 누르면 파일이 열린다."
-      action={<LibraryUpload />}
+      subtitle="인쇄해서 쓰는 상담 시트·양식. 카드를 누르면 파일이 열린다. 버전이 여럿이면 날짜를 고른다."
+      action={<LibraryUploadWithItems />}
     >
       <Suspense fallback={<p role="status" className="card p-4 text-sm text-muted">자료를 불러오는 중…</p>}>
         <LibraryGrid />

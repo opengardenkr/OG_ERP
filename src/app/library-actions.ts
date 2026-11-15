@@ -2,6 +2,7 @@
 
 import {
   addLibraryItem,
+  addLibraryVersion,
   LIBRARY_CATEGORIES,
   removeLibraryItem,
   type LibraryCategory,
@@ -26,6 +27,22 @@ export async function uploadLibraryAction(
 ): Promise<LibraryActionState> {
   const author = await requireMember();
 
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { error: "파일을 골라라." };
+  if (file.size > MAX_BYTES) return { error: "5MB까지 올릴 수 있다. PDF를 줄여서 다시 올려라." };
+
+  // 있는 자료의 새 버전: 제목·분류는 그대로, 파일만 붙는다.
+  const versionOf = String(formData.get("versionOf") ?? "").trim();
+  if (versionOf) {
+    if (!/^rec[A-Za-z0-9]{14}$/.test(versionOf)) return { error: "자료를 골라라." };
+    try {
+      await addLibraryVersion({ id: versionOf, file, author });
+      return { error: null, done: true };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : "올리지 못했다." };
+    }
+  }
+
   const title = String(formData.get("title") ?? "").trim();
   if (!title) return { error: "자료 제목을 적어라." };
 
@@ -33,10 +50,6 @@ export async function uploadLibraryAction(
   if (!(LIBRARY_CATEGORIES as readonly string[]).includes(category)) {
     return { error: "분류를 골라라." };
   }
-
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) return { error: "파일을 골라라." };
-  if (file.size > MAX_BYTES) return { error: "5MB까지 올릴 수 있다. PDF를 줄여서 다시 올려라." };
 
   try {
     await addLibraryItem({

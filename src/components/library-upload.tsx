@@ -7,10 +7,14 @@ import { uploadLibraryAction, type LibraryActionState } from "@/app/library-acti
 
 const CATEGORIES = ["영업", "수입", "시공", "자재", "내부"] as const;
 
-/** 자료실 상단의 [자료 올리기]. 열면 제목·분류·파일 한 줄 폼. */
-export function LibraryUpload() {
+/**
+ * 자료실 상단의 [자료 올리기]. 열면 제목·분류·파일 한 줄 폼.
+ * "기존 자료의 새 버전"을 고르면 제목·분류 없이 파일만 받아 그 카드에 버전으로 붙는다(카드 수는 그대로).
+ */
+export function LibraryUpload({ items }: { items: { id: string; title: string }[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [versionOf, setVersionOf] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
   const [state, setState] = useState<LibraryActionState>({ error: null });
   const [pending, start] = useTransition();
@@ -21,6 +25,7 @@ export function LibraryUpload() {
       setState(result);
       if (result.done) {
         formRef.current?.reset();
+        setVersionOf("");
         setOpen(false);
         router.refresh();
       }
@@ -41,15 +46,33 @@ export function LibraryUpload() {
       data-og-saving={pending ? "true" : undefined}
       className="card w-full p-4 sm:w-[420px]"
     >
-      <p className="section-title">새 자료</p>
+      <p className="section-title">{versionOf ? "새 버전" : "새 자료"}</p>
       <div className="mt-2 flex flex-col gap-2">
-        <input name="title" required placeholder="자료 제목" className="field" />
-        <input name="description" placeholder="한 줄 설명 (선택)" className="field" />
-        <select name="category" defaultValue="영업" className="field">
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
+        {items.length > 0 ? (
+          <select
+            name="versionOf"
+            value={versionOf}
+            onChange={(e) => setVersionOf(e.target.value)}
+            className="field"
+            aria-label="올리는 방식"
+          >
+            <option value="">새 자료로 올리기</option>
+            {items.map((i) => (
+              <option key={i.id} value={i.id}>{`「${i.title}」의 새 버전`}</option>
+            ))}
+          </select>
+        ) : null}
+        {versionOf ? null : (
+          <>
+            <input name="title" required placeholder="자료 제목" className="field" />
+            <input name="description" placeholder="한 줄 설명 (선택)" className="field" />
+            <select name="category" defaultValue="영업" className="field">
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </>
+        )}
         <input
           name="file"
           type="file"
@@ -57,7 +80,11 @@ export function LibraryUpload() {
           accept=".pdf,.png,.jpg,.jpeg,.xlsx,.docx,.pptx"
           className="field file:mr-2 file:rounded-[3px] file:border-0 file:bg-canvas file:px-2 file:py-1 file:text-xs"
         />
-        <p className="text-xs text-muted">PDF 권장, 5MB까지. 첫 쪽이 미리보기로 쓰인다.</p>
+        <p className="text-xs text-muted">
+          {versionOf
+            ? "오늘 날짜로 붙는다. 카드는 최신 버전을 보이고, 누르면 날짜별로 고를 수 있다."
+            : "PDF 권장, 5MB까지. 첫 쪽이 미리보기로 쓰인다."}
+        </p>
       </div>
       <div className="mt-3 flex items-center justify-end gap-2">
         {state.error ? <span className="mr-auto text-xs text-danger" role="alert">{state.error}</span> : null}

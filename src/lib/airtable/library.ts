@@ -7,10 +7,14 @@ import {
   getRecordFresh,
   selectRecords,
   updateRecord,
+  uploadAttachment,
 } from "@/lib/airtable/client";
 import { fail, ok, type Result } from "@/lib/result";
 
-/** `[포털] 자료실`. 자료 한 줄 = 파일 하나. */
+/**
+ * `[포털] 자료실`. 자료 한 줄 = 자료 하나, `파일` 칸의 첨부 하나하나가 버전이다.
+ * 버전 날짜는 첨부 파일명 앞의 `YYYY-MM-DD_`로 적는다(첨부에는 날짜 칸이 없다). 최신 = 날짜가 가장 늦은 것.
+ */
 export const LIBRARY_TABLE = "tblaZ9jj0TgG7xBjm";
 const FILE_FIELD_ID = "fld3ljwoIAIGR2pfb";
 
@@ -39,11 +43,23 @@ type Row = {
 export const LIBRARY_CATEGORIES = ["영업", "수입", "시공", "자재", "내부"] as const;
 export type LibraryCategory = (typeof LIBRARY_CATEGORIES)[number];
 
+export type LibraryVersion = {
+  /** Airtable 첨부 id */
+  id: string;
+  /** YYYY-MM-DD. 파일명 앞 날짜, 없으면 줄의 등록일 */
+  date: string;
+  fileName: string;
+  /** `/library/<자료 id>/file?v=<첨부 id>` — 만료되지 않는다 */
+  fileUrl: string;
+};
+
 export type LibraryItem = {
   id: string;
   title: string;
   description: string;
   category: LibraryCategory;
+  /** 버전 목록, 최신 먼저. 저장소 파일(`경로`)이면 한 개. */
+  versions: LibraryVersion[];
   /**
    * 파일을 여는 주소. 만료되지 않는다 — 첨부면 `/library/<id>/file`(열 때마다 새 Airtable URL로 302),
    * 저장소 파일이면 `/library/…` 그대로.
@@ -52,9 +68,33 @@ export type LibraryItem = {
   fileName: string;
   /** 1쪽 미리보기 주소(`/library/<id>/thumb` 또는 저장소 경로). 없으면 null — 카드는 파일명만 보인다. */
   thumbUrl: string | null;
+  /** 최신 버전 날짜 */
   date: string;
   author: string;
 };
+
+const DATE_PREFIX = /^(\d{4}-\d{2}-\d{2})_/;
+
+/** 첨부를 버전 목록으로. 파일명 앞 날짜로 정렬(늦은 것 먼저), 날짜가 같으면 뒤에 붙은 것이 최신. */
+function versionsOf(recordId: string, attachments: Attachment[], fallbackDate: string): LibraryVersion[] {
+  return attachments
+    .map((a, index) => ({
+      index,
+      id: a.id,
+      date: a.filename.match(DATE_PREFIX)?.[1] ?? fallbackDate,
+      fileName: a.filename.replace(DATE_PREFIX, ""),
+      fileUrl: `/library/${recordId}/file?v=${a.id}`,
+    }))
+    .sort((x, y) => y.date.localeCompare(x.date) || y.index - x.index)
+    .map(({ id, date, fileName, fileUrl }) => ({ id, date, fileName, fileUrl }));
+}
+
+/** 최신 버전의 첨부. */
+function latestAttachment(attachments: Attachment[] | undefined, fallbackDate: string): Attachment | undefined {
+  if (!attachments?.length) return undefined;
+  const latest = versionsOf("x", attachments, fallbackDate)[0];
+  return attachments.find((a) => a.id === latest.id);
+}
 
 /**
  * 자료 목록. 사용여부가 켜진 행만, 등록일 내림차순.
@@ -71,7 +111,8 @@ export async function getLibrary(): Promise<Result<LibraryItem[]>> {
 
     const items = records.flatMap<LibraryItem>((record) => {
       const f = record.fields;
-      const attachment = f.파일?.[0];
+      const registered = f.등록일 ?? "";
+      const attachment = latestAttachment(f.파일, registered);
       const repoPath = f.경로?.trim() || null;
       if (!f.제목 || (!attachment && !repoPath)) return [];
       const category = (LIBRARY_CATEGORIES as readonly string[]).includes(f.분류 ?? "")
@@ -80,16 +121,20 @@ export async function getLibrary(): Promise<Result<LibraryItem[]>> {
       // 첨부는 늘 고정 주소. 올린 직후 Airtable이 썸네일을 아직 안 만들었으면 그 주소가 404라
       // 카드가 파일명으로 대신하고(LibraryThumb), 몇십 초 뒤 새로고침하면 미리보기가 뜬다.
       const thumbUrl = attachment ? `/library/${record.id}/thumb` : f.미리보기경로?.trim() || null;
+      const versions = attachment
+        ? versionsOf(record.id, f.파일 ?? [], registered)
+        : [{ id: "repo", date: registered, fileName: repoPath!.split("/").pop() ?? "파일", fileUrl: repoPath! }];
       return [
         {
           id: record.id,
           title: f.제목,
           description: f.설명 ?? "",
           category,
+          versions,
           fileUrl: attachment ? `/library/${record.id}/file` : repoPath!,
-          fileName: attachment?.filename ?? repoPath!.split("/").pop() ?? "파일",
+          fileName: versions[0].fileName,
           thumbUrl,
-          date: f.등록일 ?? "",
+          date: versions[0].date,
           author: f.등록자 ?? "",
         },
       ];
@@ -102,9 +147,19 @@ export async function getLibrary(): Promise<Result<LibraryItem[]>> {
   }
 }
 
+function today(): string {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+}
+
+/** 버전 날짜를 파일명 앞에 붙인 File. 이미 붙어 있으면 그대로. */
+async function datedFile(file: File, date: string): Promise<File> {
+  const base = file.name.replace(DATE_PREFIX, "");
+  return new File([await file.arrayBuffer()], `${date}_${base}`, { type: file.type });
+}
+
 /**
- * 자료 한 건을 올린다. 줄을 만든 뒤 Airtable의 첨부 업로드 엔드포인트로 파일을 붙인다
- * (base64, 5MB 한도). 파일 저장은 Airtable이 한다 — 우리는 들고 있지 않는다(원칙 2·3).
+ * 자료 한 건을 올린다. 줄을 만든 뒤 Airtable 첨부로 파일을 붙인다(base64, 5MB 한도).
+ * 파일 저장은 Airtable이 한다 — 우리는 들고 있지 않는다(원칙 2·3). 첫 첨부가 첫 버전이다.
  */
 export async function addLibraryItem(input: {
   title: string;
@@ -113,49 +168,53 @@ export async function addLibraryItem(input: {
   author: string;
   file: File;
 }): Promise<void> {
+  const date = today();
   const record = await createRecord<Row>(LIBRARY_TABLE, {
     제목: input.title,
     설명: input.description,
     분류: input.category,
-    등록일: new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }),
+    등록일: date,
     등록자: input.author,
     사용여부: false, // 파일이 붙은 뒤에 켠다. 빈 줄이 목록에 보이지 않게.
   });
 
-  const token = (process.env.AIRTABLE_TOKEN ?? "").trim();
-  const baseId = (process.env.AIRTABLE_BASE_ID ?? "").trim();
-  const bytes = Buffer.from(await input.file.arrayBuffer());
-
-  const upload = await fetch(
-    `https://content.airtable.com/v0/${baseId}/${record.id}/${FILE_FIELD_ID}/uploadAttachment`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contentType: input.file.type || "application/octet-stream",
-        filename: input.file.name,
-        file: bytes.toString("base64"),
-      }),
-      cache: "no-store",
-    },
-  );
-  if (!upload.ok) {
+  try {
+    await uploadAttachment(LIBRARY_TABLE, record.id, FILE_FIELD_ID, await datedFile(input.file, date));
+  } catch (error) {
     await deleteRecord(LIBRARY_TABLE, record.id);
-    throw new AirtableError(`파일 업로드 실패 (${upload.status})`);
+    throw error;
   }
 
   await updateRecord<Row>(LIBRARY_TABLE, record.id, { 사용여부: true });
 }
 
 /**
- * 고정 주소가 가리킬 지금의 Airtable URL. 캐시 없이 읽는다 — Airtable은 읽을 때마다 새 서명 URL을 준다.
- * 첨부가 없고 저장소 경로만 있으면 그 경로. 없으면 null.
+ * 있는 자료에 새 버전을 붙인다. 카드는 늘지 않고 최신 버전이 앞에 선다. 옛 버전은 카드의 버전 목록에서 연다.
+ * 저장소 파일(`경로`)로 된 자료에도 붙일 수 있다 — 그때부터 첨부가 최신이다.
  */
-export async function resolveLibraryUrl(id: string, kind: "file" | "thumb"): Promise<string | null> {
+export async function addLibraryVersion(input: { id: string; file: File; author: string }): Promise<void> {
+  const record = await getRecordFresh<Row>(LIBRARY_TABLE, input.id);
+  if (!record) throw new AirtableError("자료가 없다");
+  await uploadAttachment(LIBRARY_TABLE, input.id, FILE_FIELD_ID, await datedFile(input.file, today()));
+  await updateRecord<Row>(LIBRARY_TABLE, input.id, { 등록자: input.author });
+}
+
+/**
+ * 고정 주소가 가리킬 지금의 Airtable URL. 캐시 없이 읽는다 — Airtable은 읽을 때마다 새 서명 URL을 준다.
+ * `version`(첨부 id)이 있으면 그 버전, 없으면 최신. 첨부가 없고 저장소 경로만 있으면 그 경로. 없으면 null.
+ */
+export async function resolveLibraryUrl(
+  id: string,
+  kind: "file" | "thumb",
+  version?: string,
+): Promise<string | null> {
   const record = await getRecordFresh<Row>(LIBRARY_TABLE, id);
   if (!record) return null;
   const f = record.fields;
-  const attachment = f.파일?.[0];
+  const attachment = version
+    ? f.파일?.find((a) => a.id === version)
+    : latestAttachment(f.파일, f.등록일 ?? "");
+  if (version && !attachment) return null;
   if (kind === "file") return attachment?.url ?? f.경로?.trim() ?? null;
   return attachment?.thumbnails?.large?.url ?? f.미리보기경로?.trim() ?? null;
 }
