@@ -98,9 +98,20 @@ export async function getLink(id: string): Promise<Result<TrackedLink | null>> {
   }
 }
 
-/** 짧은 주소가 열릴 때 쓴다. 캐시된 목록에서 찾는다 — 스캔마다 Airtable을 읽지 않는다. 실패는 던진다. */
+/**
+ * 짧은 주소가 열릴 때 쓴다. 캐시된 목록에서 찾는다 — 스캔마다 Airtable을 읽지 않는다. 실패는 던진다.
+ * 목록에 없으면 캐시 없이 그 코드만 한 번 더 찾는다 — Airtable에서 바로 만든 새 코드가 캐시가 바뀔 때까지 404로 나가면,
+ * 카톡이 그 404를 미리보기로 기억해 버린다(2026-11-17 nl-import). code는 normalizeCode를 통과한 값만 들어온다.
+ */
 export async function findLinkByCode(code: string): Promise<TrackedLink | null> {
-  return (await readLinks()).find((link) => link.code === code) ?? null;
+  const cached = (await readLinks()).find((link) => link.code === code);
+  if (cached) return cached;
+  const rows = await selectRecordsFresh<LinkRow>(LINKS_TABLE, {
+    fields: LINK_FIELDS,
+    filterByFormula: `{코드} = '${code}'`,
+    maxRecords: 1,
+  });
+  return rows.length ? toLink(rows[0]) : null;
 }
 
 /** 캐시 없이 코드가 이미 쓰이는지 본다. code는 normalizeCode를 통과한 값만 넣는다. */
