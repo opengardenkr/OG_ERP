@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 
+import { unstable_cache } from "next/cache";
 import { after, type NextRequest } from "next/server";
 
 import { findLinkByCode, logScan } from "@/lib/airtable/links";
-import { deviceOf, isBot, normalizeCode, referrerHost } from "@/lib/link-stats";
+import { deviceOf, isBot, normalizeCode, previewPage, referrerHost } from "@/lib/link-stats";
 
 /**
  * 추적 링크(짧은 주소) `/r/<코드>`. 로그인 없이 열린다(proxy.ts에서 뺐다) — 고객이 QR로 들어오는 문이다.
@@ -65,7 +66,7 @@ async function resolve(request: NextRequest, rawCode: string, count: boolean): P
   }
 
   // 카톡·페이스북 등 미리보기 로봇은 넘겨주기(302)를 따라가지 않는다 — 대상 페이지의 og 태그를 담은 200 페이지를 준다.
-  if (!prefetch && isBot(userAgent)) return preview(link.target);
+  if (!prefetch && isBot(userAgent)) return preview(link.target, `${request.nextUrl.origin}/r/${code}`);
 
   return new Response(null, {
     status: 302,
@@ -73,25 +74,37 @@ async function resolve(request: NextRequest, rawCode: string, count: boolean): P
   });
 }
 
-const escapeAttr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-/** 미리보기 로봇용: 대상 페이지의 제목·og·twitter 태그를 옮겨 담은 작은 페이지. 대상을 못 읽어도 og:url은 남긴다. */
-async function preview(target: string): Promise<Response> {
-  let title = "";
-  let metas: string[] = [];
-  try {
-    const r = await fetch(target, { headers: { "user-agent": "kakaotalk-scrap/1.0" }, redirect: "follow", signal: AbortSignal.timeout(4000) });
-    if (r.ok) {
-      const html = (await r.text()).slice(0, 200_000);
-      title = html.match(/<title>[^<]{0,200}<\/title>/i)?.[0] ?? "";
-      metas = html.match(/<meta\s+(?:property|name)="(?:og:[a-z_:]+|twitter:[a-z_:]+|description)"\s+content="[^"]{0,1000}"\s*\/?>/gi) ?? [];
-    }
-  } catch {
-    /* 대상이 느리거나 막혀도 og:url만으로 로봇이 대상을 다시 읽는다 */
+/** 대상 페이지의 머리(head)만 읽는다 — 주문 링크 화면은 1MB가 넘어 끝까지 받으면 로봇이 기다리다 포기한다. */
+async function readHead(target: string): Promise<string> {
+  const r = await fetch(target, { headers: { "user-agent": "kakaotalk-scrap/1.0" }, redirect: "follow", signal: AbortSignal.timeout(6000) });
+  if (!r.ok || !r.body) throw new Error(`target ${r.status}`);
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let head = "";
+  while (head.length < 200_000) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    head += decoder.decode(value, { stream: true });
+    const end = head.search(/<\/head>/i);
+    if (end >= 0) { head = head.slice(0, end); break; }
   }
-  if (!metas.some((m) => /og:url/i.test(m))) metas.push(`<meta property="og:url" content="${escapeAttr(target)}">`);
-  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8">${title}${metas.join("")}<meta name="robots" content="noindex"><meta http-equiv="refresh" content="0;url=${escapeAttr(target)}"></head><body></body></html>`;
-  return new Response(html, {
+  await reader.cancel().catch(() => {});
+  if (!/og:|<title>/i.test(head)) throw new Error("no og tags");
+  return head;
+}
+
+/** 성공한 머리만 1시간 기억한다(실패는 던져서 기억하지 않는다) — 두 번째 로봇부터는 대상을 기다리지 않는다. */
+const cachedHead = unstable_cache(readHead, ["link-preview-head"], { revalidate: 3600 });
+
+/** 미리보기 로봇용 작은 페이지. 대상을 못 읽어도 짧은 주소의 og:url은 남긴다. */
+async function preview(target: string, selfUrl: string): Promise<Response> {
+  let head = "";
+  try {
+    head = await cachedHead(target);
+  } catch {
+    /* 대상이 느리거나 막혀도 빈 머리로 그린다 */
+  }
+  return new Response(previewPage(head, selfUrl, target), {
     status: 200,
     headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300", "X-Robots-Tag": "noindex" },
   });
