@@ -187,3 +187,20 @@ export function countryName(code: string): string {
     return code;
   }
 }
+
+const escapeAttr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * 미리보기 로봇(카톡 스크랩 등)에게 줄 작은 페이지. 대상 페이지 머리(head)에서 제목·og·twitter·description을 옮긴다.
+ * og:url은 **짧은 주소 자신**으로 바꾼다 — 카톡은 og:url이 요청 주소와 다르면 og:url 쪽을 다시 읽는데,
+ * 대상(/o/ 등)은 검색 제외·용량 큰 페이지라 거기서 실패하면 미리보기가 빈다(2026-11-17 nl-pool "미리보기 없음").
+ * 로봇만 받는 페이지라 새로고침 이동(meta refresh)은 넣지 않는다 — 스크랩이 그걸 따라가 대상으로 갈 수 있다.
+ */
+export function previewPage(targetHead: string, selfUrl: string, target: string): string {
+  const head = targetHead.slice(0, 200_000);
+  const title = head.match(/<title>[^<]{0,200}<\/title>/i)?.[0] ?? "";
+  const metas = (head.match(/<meta\s+(?:property|name)="(?:og:[a-z_:]+|twitter:[a-z_:]+|description)"\s+content="[^"]{0,1000}"\s*\/?>/gi) ?? [])
+    .filter((m) => !/(?:property|name)="og:url"/i.test(m));
+  metas.push(`<meta property="og:url" content="${escapeAttr(selfUrl)}">`);
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8">${title}${metas.join("")}<meta name="robots" content="noindex"></head><body><a href="${escapeAttr(target)}">${escapeAttr(target)}</a></body></html>`;
+}

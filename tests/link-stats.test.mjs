@@ -100,3 +100,20 @@ test('QR 디자인: 두 가지 모양, 로고 자리는 가운데·작게', asyn
   assert.ok(frame.height > frame.width); // 위에 SCAN ME
   assert.ok(!/<text/.test(frame.svg)); // 글자는 외곽선 — 글꼴 없이도 같은 모양
 });
+
+test('미리보기 페이지: og:url은 짧은 주소, 대상의 og:url·새로고침 이동은 없다', async () => {
+  const { previewPage } = await import('../src/lib/link-stats.ts');
+  const head = '<head><title>네덜란드 직수입 공동주문서 · 오픈가든</title>'
+    + '<meta property="og:title" content="오픈가든 · 공동주문서"><meta property="og:url" content="https://open-garden.co.kr/o/AAA">'
+    + '<meta property="og:image" content="https://open-garden.co.kr/assets/og-pool.jpg"><meta name="robots" content="noindex, nofollow">';
+  const html = previewPage(head, 'https://app.open-garden.co.kr/r/nl-pool', 'https://open-garden.co.kr/o/AAA');
+  assert.match(html, /<title>네덜란드 직수입 공동주문서/);
+  assert.match(html, /og:image" content="https:\/\/open-garden.co.kr\/assets\/og-pool.jpg"/);
+  assert.match(html, /og:url" content="https:\/\/app.open-garden.co.kr\/r\/nl-pool"/);
+  assert.doesNotMatch(html, /og:url" content="https:\/\/open-garden.co.kr\/o\//);
+  assert.doesNotMatch(html, /http-equiv="refresh"/);
+  assert.equal((html.match(/og:url/g) || []).length, 1);
+  const empty = previewPage('', 'https://app.open-garden.co.kr/r/x1y', 'https://e.com/a?b=1&c="2"');
+  assert.match(empty, /og:url" content="https:\/\/app.open-garden.co.kr\/r\/x1y"/);
+  assert.match(empty, /&quot;2&quot;/);
+});
