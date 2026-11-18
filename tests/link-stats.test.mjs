@@ -113,6 +113,9 @@ test('미리보기 페이지: og:url은 짧은 주소, 대상의 og:url·새로�
   assert.doesNotMatch(html, /og:url" content="https:\/\/open-garden.co.kr\/o\//);
   assert.doesNotMatch(html, /http-equiv="refresh"/);
   assert.equal((html.match(/og:url/g) || []).length, 1);
+  assert.match(html, /<script>location\.replace\("https:\/\/open-garden\.co\.kr\/o\/AAA"\)<\/script>/);
+  const evil = previewPage('', 'https://app.open-garden.co.kr/r/x', 'https://e.com/</script><b>');
+  assert.doesNotMatch(evil, /<\/script><b>/);
   const empty = previewPage('', 'https://app.open-garden.co.kr/r/x1y', 'https://e.com/a?b=1&c="2"');
   assert.match(empty, /og:url" content="https:\/\/app.open-garden.co.kr\/r\/x1y"/);
   assert.match(empty, /&quot;2&quot;/);

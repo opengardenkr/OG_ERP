@@ -70,7 +70,7 @@ async function resolve(request: NextRequest, rawCode: string, count: boolean): P
 
   return new Response(null, {
     status: 302,
-    headers: { Location: link.target, "Cache-Control": "no-store", "X-Robots-Tag": "noindex" },
+    headers: { Location: link.target, "Cache-Control": "private, no-store", Vary: "User-Agent", "X-Robots-Tag": "noindex" },
   });
 }
 
@@ -106,7 +106,8 @@ async function preview(target: string, selfUrl: string): Promise<Response> {
   }
   return new Response(previewPage(head, selfUrl, target), {
     status: 200,
-    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300", "X-Robots-Tag": "noindex" },
+    // 저장 금지: 이 페이지가 CDN·브라우저에 남으면 같은 주소로 온 사람도 이 페이지를 받는다(2026-11-18). 카톡은 자기 쪽에서 따로 기억한다.
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store", Vary: "User-Agent", "X-Robots-Tag": "noindex" },
   });
 }
 
