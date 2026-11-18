@@ -38,7 +38,7 @@ async function LibraryGrid() {
             versions={item.versions}
             latestUrl={item.fileUrl}
             label={item.title}
-            className="flex aspect-[3/4] items-center justify-center bg-canvas p-3"
+            className="flex aspect-[3/4] items-center justify-center overflow-hidden bg-canvas p-3"
           >
             <LibraryThumb src={item.thumbUrl} fileName={item.fileName} />
           </LibraryVersions>
