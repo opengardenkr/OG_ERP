@@ -77,7 +77,7 @@ export function LibraryUpload({ items }: { items: { id: string; title: string }[
           name="file"
           type="file"
           required
-          accept=".pdf,.png,.jpg,.jpeg,.xlsx,.docx,.pptx"
+          accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.docx,.doc,.pptx,.ppt,.hwp,.hwpx"
           className="field file:mr-2 file:rounded-[3px] file:border-0 file:bg-canvas file:px-2 file:py-1 file:text-xs"
         />
         <p className="text-xs text-muted">
