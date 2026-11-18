@@ -13,7 +13,37 @@
       status(deleted?'삭제했습니다. [삭제 포함]을 켜면 다시 보이며 복원할 수 있습니다.':'복원했습니다.');
     }catch(error){status(error.message||'저장하지 못했습니다.',true);}
   }
+  // Adapt the bundled generator through its public handlers; never edit its minified internals.
+  function firstContactName(value){
+    return String(value || '').split(/[,，、;；\n\r]+/)[0].trim();
+  }
+  function installContactNameDefaults(){
+    const name=document.getElementById('cName');
+    if(!name)return;
+    for(const handler of ['loadClient','pickClient','onClientKey','onClientBlur']){
+      const original=window[handler];
+      if(typeof original!=='function')continue;
+      window[handler]=function(...args){
+        const before=name.value;
+        const result=original.apply(this,args);
+        const selected=handler==='pickClient'||(handler==='loadClient'&&document.getElementById('clientSelect')?.value!=='');
+        if(selected||name.value!==before){
+          const first=firstContactName(name.value);
+          if(first!==name.value){
+            name.value=first;
+            // Persist only the document draft, not the saved customer record.
+            if(typeof window.saveDraft==='function')window.saveDraft();
+          }
+        }
+        return result;
+      };
+    }
+    const hint=document.createElement('small');
+    hint.textContent='거래처 선택 시 첫 번째 성명을 입력합니다. 이 문서에서만 수정할 수 있습니다.';
+    name.after(hint);
+  }
   window.addEventListener('load',()=>{
+    installContactNameDefaults();
     window.deleteQuote=id=>changeDeleted(id,true);window.restoreQuote=id=>changeDeleted(id,false);
     const actions=document.querySelector('#mainPane-write .actions') || document.getElementById('itemBody')?.closest('.section');
     if(!actions)return;
