@@ -7,6 +7,7 @@ const ITEMS = [
   { href: "/", label: "대시보드" },
   { href: "/proposal", label: "제안서" },
   { href: "/quote", label: "견적서" },
+  { href: "/purchase", label: "발주서" },
   { href: "/catalog", label: "주문" },
   { href: "/sales", label: "매출" },
   { href: "/catalog/manage", label: "품종 관리" },

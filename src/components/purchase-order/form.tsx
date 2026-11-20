@@ -1,0 +1,247 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+
+import { savePurchaseOrderAction } from "@/app/purchase-actions";
+import {
+  CURRENCIES,
+  CURRENCY_LABEL,
+  checkPoInput,
+  emptyParty,
+  formatAmount,
+  formatQty,
+  hangulFields,
+  lineAmount,
+  poTotals,
+  taxLabel,
+  type Currency,
+  type PoDoc,
+  type PoLine,
+  type PoParty,
+  type PoSupplier,
+} from "@/lib/purchase-order";
+
+type LineDraft = { key: number; code: string; description: string; size: string; qty: string; unit: string; price: string };
+
+export type PoFormInitial = { id: string | null; date: string; supplierId: string | null; doc: PoDoc | null };
+
+let nextKey = 1;
+const blank = (unit = "pcs"): LineDraft => ({ key: nextKey++, code: "", description: "", size: "", qty: "", unit, price: "" });
+const draftOf = (l: PoLine): LineDraft => ({
+  key: nextKey++, code: l.code, description: l.description, size: l.size, qty: String(l.qty), unit: l.unit, price: l.price === null ? "" : String(l.price),
+});
+const toNumber = (s: string) => {
+  const t = s.replaceAll(",", "").trim();
+  return t === "" ? Number.NaN : Number(t);
+};
+
+/** 한국 업체(한글 상호·주소, 사업자번호)면 원화, 아니면 유로. 새 발주서에서 공급업체를 고를 때만 쓴다. */
+const guessCurrency = (s: PoParty): Currency =>
+  /[가-힣]/.test(s.company + s.address) || taxLabel(s.taxId) === "Business Reg. No." ? "KRW" : "EUR";
+
+function Field({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <label className={`flex flex-col gap-1 text-xs text-muted ${wide ? "sm:col-span-2" : ""}`}>
+      {label}
+      {children}
+    </label>
+  );
+}
+
+/**
+ * 영문 발주서 쓰기·고치기. 화면 글은 한국어, 칸에 적는 내용은 문서에 그대로 영어로 찍힌다.
+ * 공급업체를 고르면 거래처에 적어 둔 영문 정보가 채워지고, 이 발주서에서만 고칠 수 있다(거래처는 그대로).
+ */
+export function PurchaseOrderForm({ suppliers, initial }: { suppliers: PoSupplier[]; initial: PoFormInitial }) {
+  const router = useRouter();
+  const doc = initial.doc;
+  const [supplierId, setSupplierId] = useState(initial.supplierId ?? "");
+  const [party, setParty] = useState<PoParty>(doc?.supplier ?? emptyParty());
+  const [date, setDate] = useState(initial.date);
+  const [currency, setCurrency] = useState<Currency>(doc?.currency ?? "EUR");
+  const [terms, setTerms] = useState({
+    reference: doc?.reference ?? "",
+    requestedDelivery: doc?.requestedDelivery ?? "",
+    deliveryTerms: doc?.deliveryTerms ?? "",
+    paymentTerms: doc?.paymentTerms ?? "",
+    shipTo: doc?.shipTo ?? "",
+    remarks: doc?.remarks ?? "",
+  });
+  const [lines, setLines] = useState<LineDraft[]>(() => (doc?.lines.length ? doc.lines.map(draftOf) : [blank(), blank(), blank()]));
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [pending, start] = useTransition();
+
+  const touch = () => setSaved(false);
+  const setP = (k: keyof PoParty, v: string) => (touch(), setParty((p) => ({ ...p, [k]: v })));
+  const setT = (k: keyof typeof terms, v: string) => (touch(), setTerms((t) => ({ ...t, [k]: v })));
+  const setLine = (key: number, k: keyof Omit<LineDraft, "key">, v: string) =>
+    (touch(), setLines((ls) => ls.map((l) => (l.key === key ? { ...l, [k]: v } : l))));
+
+  const pickSupplier = (id: string) => {
+    touch();
+    setSupplierId(id);
+    const s = suppliers.find((x) => x.id === id);
+    if (!s) return;
+    const next = { company: s.company, attn: s.attn, address: s.address, phone: s.phone, email: s.email, taxId: s.taxId };
+    setParty(next);
+    if (!initial.id) setCurrency(guessCurrency(next));
+  };
+
+  const payload = () => ({
+    date,
+    supplierId: supplierId || null,
+    doc: {
+      currency,
+      supplier: party,
+      ...terms,
+      lines: lines.map((l) => ({ code: l.code, description: l.description, size: l.size, qty: l.qty, unit: l.unit, price: l.price })),
+    },
+  });
+
+  // 미리 검사한 문서(합계·한글 경고용). 저장할 때 서버가 같은 규칙으로 다시 검사한다.
+  const checked = checkPoInput(payload());
+  const totals = "error" in checked ? null : poTotals(checked.doc);
+  const hangul = "error" in checked ? [] : hangulFields(checked.doc);
+
+  const save = () =>
+    start(async () => {
+      setError(null);
+      const result = await savePurchaseOrderAction(initial.id, JSON.stringify(payload()));
+      if (result.error) return setError(result.error);
+      if (!initial.id && result.id) router.push(`/purchase/${result.id}`);
+      else {
+        setSaved(true);
+        router.refresh();
+      }
+    });
+
+  return (
+    <form
+      action={save}
+      data-og-saving={pending ? "true" : undefined}
+      className="flex flex-col gap-4"
+    >
+      <section className="card p-4">
+        <p className="section-title">공급업체 · SUPPLIER</p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <Field label="공급업체 고르기 (거래처 구분 '공급업체')" wide>
+            <select value={supplierId} onChange={(e) => pickSupplier(e.target.value)} className="field">
+              <option value="">— 고르기 —</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="상호 (Company)"><input value={party.company} onChange={(e) => setP("company", e.target.value)} required className="field" /></Field>
+          <Field label="담당자 (Attn.)"><input value={party.attn} onChange={(e) => setP("attn", e.target.value)} className="field" /></Field>
+          <Field label="주소 (Address)" wide><input value={party.address} onChange={(e) => setP("address", e.target.value)} className="field" /></Field>
+          <Field label="전화 (Tel)"><input value={party.phone} onChange={(e) => setP("phone", e.target.value)} className="field" /></Field>
+          <Field label="메일 (E-mail)"><input value={party.email} onChange={(e) => setP("email", e.target.value)} className="field" /></Field>
+          <Field label={`등록번호 (${party.taxId ? taxLabel(party.taxId) : "VAT No."})`}><input value={party.taxId} onChange={(e) => setP("taxId", e.target.value)} className="field" /></Field>
+        </div>
+        <p className="mt-2 text-[11px] text-faint">여기서 고친 값은 이 발주서에만 남는다. 다음 발주서에도 쓰려면 거래처에서 고친다.</p>
+      </section>
+
+      <section className="card p-4">
+        <p className="section-title">발주 조건</p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <Field label="발주일 (Date)"><input type="date" value={date} onChange={(e) => (touch(), setDate(e.target.value))} required className="field" /></Field>
+          <Field label="통화 (Currency)">
+            <select value={currency} onChange={(e) => (touch(), setCurrency(e.target.value as Currency))} className="field">
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>{CURRENCY_LABEL[c]}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="상대 참조번호 (Your reference)">
+            <input value={terms.reference} onChange={(e) => setT("reference", e.target.value)} placeholder="e.g. Additional to OC 15485" className="field" />
+          </Field>
+          <Field label="희망 납기 (Requested delivery)">
+            <input value={terms.requestedDelivery} onChange={(e) => setT("requestedDelivery", e.target.value)} placeholder="e.g. Week 10, 2027 / 2027-03-02 / ASAP" className="field" />
+          </Field>
+          <Field label="인도 조건 (Delivery terms)">
+            <input value={terms.deliveryTerms} onChange={(e) => setT("deliveryTerms", e.target.value)} placeholder="e.g. Ex-nursery Ederveen / FCA Schiphol" className="field" />
+          </Field>
+          <Field label="결제 조건 (Payment terms)">
+            <input value={terms.paymentTerms} onChange={(e) => setT("paymentTerms", e.target.value)} placeholder="e.g. 30% advance, balance before shipment" className="field" />
+          </Field>
+          <Field label="받는 곳 (Ship to) — 비우면 Same as Buyer" wide>
+            <textarea value={terms.shipTo} onChange={(e) => setT("shipTo", e.target.value)} rows={2} className="field" />
+          </Field>
+        </div>
+      </section>
+
+      <section className="card p-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="section-title">품목 · ITEMS</p>
+          <span className="text-[11px] text-faint">단가를 비우면 문서에 &ldquo;On request&rdquo;로 나오고 합계에서 빠진다</span>
+        </div>
+        <div className="mt-2 hidden grid-cols-[28px_96px_1fr_64px_72px_56px_88px_88px_28px] gap-1.5 px-0.5 text-[11px] text-faint sm:grid">
+          <span>No</span><span>코드</span><span>품명 (영문)</span><span>규격</span><span>수량</span><span>단위</span><span>단가 ({currency})</span><span className="text-right">금액</span><span />
+        </div>
+        <ul className="mt-1 flex flex-col gap-2 sm:gap-1">
+          {lines.map((l, i) => {
+            const qty = toNumber(l.qty);
+            const price = l.price.trim() === "" ? null : toNumber(l.price);
+            const amount = Number.isFinite(qty) && (price === null || Number.isFinite(price)) ? lineAmount({ qty, price }, currency) : null;
+            return (
+              <li key={l.key} className="grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1fr)] gap-1.5 rounded-[3px] border border-line p-2 sm:grid-cols-[28px_96px_minmax(0,1fr)_64px_72px_56px_88px_88px_28px] sm:items-center sm:border-0 sm:p-0.5">
+                <span className="row-span-5 pt-2 text-xs text-faint sm:row-span-1 sm:pt-0">{i + 1}</span>
+                <input aria-label="코드" value={l.code} onChange={(e) => setLine(l.key, "code", e.target.value)} placeholder="Item code" className="field min-w-0 col-span-2 sm:col-span-1" />
+                <input aria-label="품명" value={l.description} onChange={(e) => setLine(l.key, "description", e.target.value)} placeholder="Description (English)" className="field min-w-0 col-span-2 sm:col-span-1" />
+                <input aria-label="규격" value={l.size} onChange={(e) => setLine(l.key, "size", e.target.value)} placeholder="Size" className="field min-w-0" />
+                <input aria-label="수량" value={l.qty} onChange={(e) => setLine(l.key, "qty", e.target.value)} inputMode="decimal" placeholder="Qty" className="field min-w-0 text-right" />
+                <input aria-label="단위" value={l.unit} onChange={(e) => setLine(l.key, "unit", e.target.value)} placeholder="Unit" className="field min-w-0" />
+                <input aria-label="단가" value={l.price} onChange={(e) => setLine(l.key, "price", e.target.value)} inputMode="decimal" placeholder="Price" className="field min-w-0 text-right" />
+                <span className="self-center text-right text-sm tabular-nums">
+                  {amount === null ? (price === null && l.description ? <span className="text-xs text-faint">On request</span> : "") : formatAmount(amount, currency)}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`${i + 1}번째 줄 지우기`}
+                  onClick={() => (touch(), setLines((ls) => (ls.length > 1 ? ls.filter((x) => x.key !== l.key) : [blank()])))}
+                  className="self-center text-faint hover:text-danger"
+                >
+                  ×
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <button type="button" className="btn" onClick={() => (touch(), setLines((ls) => [...ls, blank(ls.at(-1)?.unit || "pcs")]))}>줄 추가</button>
+          {totals ? (
+            <p className="text-sm">
+              <span className="text-muted">
+                {totals.lines}품목 · {formatQty(totals.qty)}{totals.units.length === 1 ? ` ${totals.units[0]}` : ""}
+                {totals.onRequest.length ? ` · 가격 문의 ${totals.onRequest.join(", ")}번 제외` : ""}
+              </span>
+              <b className="ml-3 tabular-nums">{currency} {formatAmount(totals.total, currency)}</b>
+            </p>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="card p-4">
+        <p className="section-title">비고 · REMARKS</p>
+        <textarea value={terms.remarks} onChange={(e) => setT("remarks", e.target.value)} rows={5} className="field mt-2 w-full" placeholder="e.g. Please reserve the stock first; final quantities to be confirmed." />
+      </section>
+
+      {hangul.length ? (
+        <p className="rounded-[3px] border border-[#f5cd47] bg-[#fff7d6] px-3 py-2 text-xs text-[#7f5f01]">
+          영문 문서인데 한글이 들어간 칸이 있다: {hangul.join(", ")}. 외국 공급업체는 읽지 못한다.
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {error ? <span className="mr-auto text-sm text-danger" role="alert">{error}</span> : null}
+        {saved && !error ? <span className="mr-auto text-sm text-brand-600" role="status">저장했다.</span> : null}
+        <button type="submit" className="btn-primary" disabled={pending}>
+          {pending ? "저장 중" : initial.id ? "저장" : "발주서 만들기"}
+        </button>
+      </div>
+    </form>
+  );
+}
