@@ -50,18 +50,17 @@ test('등록번호 칸 이름: 한국 사업자번호면 Business Reg. No., 아�
   assert.equal(taxLabel('NL009040171B01'), 'VAT No.');
 });
 
-test('쪽 나누기: 첫 쪽 14줄, 다음 쪽 24줄, 빈 목록도 한 쪽', () => {
+test('쪽 나누기: 첫 쪽 26줄, 다음 쪽 30줄, 빈 목록도 한 쪽', () => {
   assert.equal(poPages([]).length, 1);
-  assert.equal(poPages(Array(14).fill(0)).length, 1);
-  const p = poPages(Array(40).fill(0));
-  assert.deepEqual(p.map((x) => x.length), [14, 24, 2]);
+  assert.equal(poPages(Array(26).fill(0)).length, 1);
+  assert.deepEqual(poPages(Array(60).fill(0)).map((x) => x.length), [26, 30, 4]);
 });
 
-test('합계·서명 칸이 마지막 쪽에 안 들어가면 빈 쪽을 하나 더 붙인다', () => {
-  assert.deepEqual(poLayout(Array(6).fill(0)).map((x) => x.length), [6]);
-  assert.deepEqual(poLayout(Array(12).fill(0)).map((x) => x.length), [12, 0]);
-  assert.deepEqual(poLayout(Array(30).fill(0)).map((x) => x.length), [14, 16]);
-  assert.deepEqual(poLayout(Array(34).fill(0)).map((x) => x.length), [14, 20, 0]);
+test('Note가 마지막 쪽에 안 들어가면 빈 쪽을 하나 더 붙인다 — Note가 없으면 붙이지 않는다', () => {
+  assert.deepEqual(poLayout(Array(6).fill(0), true).map((x) => x.length), [6]);
+  assert.deepEqual(poLayout(Array(24).fill(0), true).map((x) => x.length), [24, 0]);
+  assert.deepEqual(poLayout(Array(24).fill(0), false).map((x) => x.length), [24]);
+  assert.deepEqual(poLayout(Array(52).fill(0), true).map((x) => x.length), [26, 26, 0]);
 });
 
 test('입력 검사: 빈 줄은 버리고, 단가 빈칸 = 가격 문의(null), "1,003" 같은 쉼표 숫자는 읽는다', () => {
@@ -88,6 +87,13 @@ test('입력 검사: 상호·품명·수량·통화가 없으면 거절', () => 
   assert.match(checkPoInput({ date: '2026-11-20', doc: { currency: 'EUR', supplier: { company: ' ' }, lines: [{ description: 'X', qty: 1 }] } }).error, /상호/);
 });
 
+test('문서 제목: 고르지 않은 옛 문서는 PURCHASE ORDER, 뺀 칸(reference 등)은 버린다', () => {
+  const r = checkPoInput(input([{ description: 'X', qty: 1 }], { reference: 'OC 1', shipTo: 'Seoul' }));
+  assert.equal(r.doc.kind, 'order');
+  assert.equal('reference' in r.doc, false);
+  assert.equal(checkPoInput(input([{ description: 'X', qty: 1 }], { kind: 'inquiry' })).doc.kind, 'inquiry');
+});
+
 test('저장한 JSON을 다시 읽는다 — 깨진 JSON은 null', () => {
   const r = checkPoInput(input([{ description: 'X', qty: 2, price: 1 }], { remarks: 'Hold stock' }));
   const back = parsePoDoc(JSON.stringify(r.doc));
@@ -98,5 +104,5 @@ test('저장한 JSON을 다시 읽는다 — 깨진 JSON은 null', () => {
 
 test('한글이 든 칸을 알려준다(영문 문서 경고)', () => {
   const r = checkPoInput(input([{ description: '흰말채 White Gold', qty: 2 }, { description: 'Syringa', qty: 1 }], { remarks: '재고 확보 부탁' }));
-  assert.deepEqual(hangulFields(r.doc), ['Remarks', '1번째 줄']);
+  assert.deepEqual(hangulFields(r.doc), ['1번째 줄', 'Note']);
 });

@@ -1,7 +1,7 @@
 /**
- * 영문 발주서(Purchase Order) 규칙. 화면·서버가 같이 쓴다 — server-only 없음, Airtable 모름.
- * 발주서 한 장 = 공급업체 하나 + 통화 하나. 문서 내용은 전부 영어(외국 공급업체가 읽는다).
- * 단가를 비우면 "On request"(가격 문의) — 합계에서 빠지고 문서에 그렇게 적힌다.
+ * 영문 발주서(Order inquiry / Purchase order) 규칙. 화면·서버가 같이 쓴다 — server-only 없음, Airtable 모름.
+ * 발주서 한 장 = 공급업체 하나 + 통화 하나. 문서는 영어이고 품목·규격·수량·단가만 싣는다(2026-11-20 사용자:
+ * "쓸데없는 글씨 너무 많아, 오더 인콰이어리하고 품목 규격 단가 수량만"). 단가를 비우면 "On request".
  */
 
 export const CURRENCIES = ["EUR", "USD", "KRW", "JPY", "GBP", "CNY"] as const;
@@ -17,6 +17,12 @@ export const CURRENCY_LABEL: Record<Currency, string> = {
 };
 
 const DECIMALS: Record<Currency, number> = { EUR: 2, USD: 2, KRW: 0, JPY: 0, GBP: 2, CNY: 2 };
+
+/** 문서 제목. 재고·가격 확인 먼저(inquiry), 확정 주문(order). */
+export const PO_KINDS = ["inquiry", "order"] as const;
+export type PoKind = (typeof PO_KINDS)[number];
+export const PO_TITLE: Record<PoKind, string> = { inquiry: "ORDER INQUIRY", order: "PURCHASE ORDER" };
+export const PO_KIND_LABEL: Record<PoKind, string> = { inquiry: "ORDER INQUIRY · 재고·가격 확인", order: "PURCHASE ORDER · 확정 주문" };
 
 export const PO_STATUSES = ["작성", "발주완료", "공급업체확인", "부분입고", "입고완료", "취소"] as const;
 export type PoStatus = (typeof PO_STATUSES)[number];
@@ -38,21 +44,17 @@ export type PoLine = {
   price: number | null;
 };
 
-/** 발주내용JSON v1. 발행 당시 공급업체 정보까지 담는다 — 거래처를 나중에 고쳐도 문서는 그대로. */
+/**
+ * 발주내용JSON v1. 발행 당시 공급업체 정보까지 담는다 — 거래처를 나중에 고쳐도 문서는 그대로.
+ * (첫 판에 있던 reference·납기·인도/결제 조건·ship to 칸은 2026-11-20에 뺐다. 옛 JSON에 남아 있어도 무시한다)
+ */
 export type PoDoc = {
   v: 1;
+  kind: PoKind;
   currency: Currency;
   supplier: PoParty;
-  /** Your reference — 상대 주문확인서·견적 번호 등(예: Additional to OC 15485). */
-  reference: string;
-  /** Requested delivery — 날짜 또는 "Week 10, 2027" 같은 글. */
-  requestedDelivery: string;
-  /** Delivery terms (예: Ex-nursery Ederveen, FCA). */
-  deliveryTerms: string;
-  paymentTerms: string;
-  /** 비우면 문서에 "Same as Buyer". */
-  shipTo: string;
   lines: PoLine[];
+  /** 적으면 표 아래 Note 한 칸으로 나온다. 비우면 아무것도 안 나온다. */
   remarks: string;
 };
 
@@ -61,6 +63,7 @@ export const MAX_LINES = 200;
 export const emptyParty = (): PoParty => ({ company: "", attn: "", address: "", phone: "", email: "", taxId: "" });
 
 export const isCurrency = (v: unknown): v is Currency => (CURRENCIES as readonly unknown[]).includes(v);
+export const isPoKind = (v: unknown): v is PoKind => (PO_KINDS as readonly unknown[]).includes(v);
 export const isPoStatus = (v: unknown): v is PoStatus => (PO_STATUSES as readonly unknown[]).includes(v);
 
 export const decimalsOf = (currency: Currency) => DECIMALS[currency];
@@ -140,21 +143,21 @@ export function poNumber(date: string, existing: string[]): string {
   return `${prefix}${String(max + 1).padStart(3, "0")}`;
 }
 
-/** A4 쪽 나누기. 첫 쪽은 당사자·조건 칸이 있어 줄이 적다. 빈 목록도 한 쪽. */
-export function poPages<T>(lines: T[], first = 14, next = 24): T[][] {
+/** A4 쪽 나누기. 첫 쪽은 To 줄이 있어 조금 적다. 빈 목록도 한 쪽. */
+export function poPages<T>(lines: T[], first = 26, next = 30): T[][] {
   const pages: T[][] = [lines.slice(0, first)];
   for (let i = first; i < lines.length; i += next) pages.push(lines.slice(i, i + next));
   return pages;
 }
 
 /**
- * 인쇄할 쪽들. 마지막 쪽에 합계·비고·서명 칸이 들어갈 자리가 없으면(첫 쪽은 8줄, 다음 쪽은 16줄 넘게)
- * 그 칸만 다음 쪽으로 넘긴다 — 빈 품목 목록의 쪽이 하나 붙는다.
+ * 인쇄할 쪽들. Note가 있는데 마지막 쪽에 자리가 없으면(첫 쪽 20줄, 다음 쪽 24줄 넘게)
+ * Note만 다음 쪽으로 넘긴다 — 빈 품목 목록의 쪽이 하나 붙는다.
  */
-export function poLayout<T>(lines: T[]): T[][] {
+export function poLayout<T>(lines: T[], hasNote = false): T[][] {
   const pages = poPages(lines);
-  const room = pages.length === 1 ? 8 : 16;
-  if ((pages.at(-1)?.length ?? 0) > room) pages.push([]);
+  const room = pages.length === 1 ? 20 : 24;
+  if (hasNote && (pages.at(-1)?.length ?? 0) > room) pages.push([]);
   return pages;
 }
 
@@ -170,19 +173,13 @@ const HANGUL = /[ㄱ-ㆎ가-힣]/;
 /** 한글이 든 칸 이름(화면 경고용). 영문 문서라 외국 업체가 못 읽는다 — 막지는 않는다(국내 공급업체 상호 등). */
 export function hangulFields(doc: PoDoc): string[] {
   const out: string[] = [];
-  const s = doc.supplier;
-  const party: [string, string][] = [
-    ["공급업체 상호", s.company], ["담당자", s.attn], ["주소", s.address], ["전화", s.phone], ["메일", s.email], ["등록번호", s.taxId],
-  ];
-  for (const [label, v] of party) if (HANGUL.test(v)) out.push(label);
-  const terms: [string, string][] = [
-    ["Your reference", doc.reference], ["Requested delivery", doc.requestedDelivery], ["Delivery terms", doc.deliveryTerms],
-    ["Payment terms", doc.paymentTerms], ["Ship to", doc.shipTo], ["Remarks", doc.remarks],
-  ];
-  for (const [label, v] of terms) if (HANGUL.test(v)) out.push(label);
+  // 문서에 찍히는 칸만 본다: To 줄(상호·담당자), 품목 줄, Note.
+  if (HANGUL.test(doc.supplier.company)) out.push("공급업체 상호");
+  if (HANGUL.test(doc.supplier.attn)) out.push("담당자");
   doc.lines.forEach((l, i) => {
-    if ([l.code, l.description, l.size, l.unit].some((v) => HANGUL.test(v))) out.push(`${i + 1}번째 줄`);
+    if ([l.description, l.size, l.unit].some((v) => HANGUL.test(v))) out.push(`${i + 1}번째 줄`);
   });
+  if (HANGUL.test(doc.remarks)) out.push("Note");
   return out;
 }
 
@@ -256,18 +253,8 @@ export function checkPoInput(raw: unknown): { error: string } | PoInput {
   return {
     date,
     supplierId,
-    doc: {
-      v: 1,
-      currency: d.currency,
-      supplier,
-      reference: str(d.reference, 300),
-      requestedDelivery: str(d.requestedDelivery, 120),
-      deliveryTerms: str(d.deliveryTerms, 200),
-      paymentTerms: str(d.paymentTerms, 200),
-      shipTo: str(d.shipTo, 500),
-      lines,
-      remarks: str(d.remarks, 4000),
-    },
+    // 제목이 없는 옛 문서는 PURCHASE ORDER(처음 만든 양식의 제목)
+    doc: { v: 1, kind: isPoKind(d.kind) ? d.kind : "order", currency: d.currency, supplier, lines, remarks: str(d.remarks, 4000) },
   };
 }
 

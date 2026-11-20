@@ -164,8 +164,9 @@ function fieldsOf(input: PoInput): Row {
     [F.contact]: [doc.supplier.phone, doc.supplier.email].filter(Boolean).join(" · ") || null,
     [F.taxId]: doc.supplier.taxId || null,
     [F.address]: doc.supplier.address || null,
-    [F.due]: /^\d{4}-\d{2}-\d{2}$/.test(doc.requestedDelivery) ? doc.requestedDelivery : null,
-    [F.shipTo]: doc.shipTo || null,
+    // 납기·납품장소는 문서에서 뺐다(2026-11-20). 옛 값이 남지 않게 비운다.
+    [F.due]: null,
+    [F.shipTo]: null,
     [F.count]: t.lines,
     [F.qty]: t.qty,
     [F.currency]: doc.currency,
