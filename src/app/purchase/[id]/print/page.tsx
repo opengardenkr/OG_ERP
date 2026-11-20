@@ -7,6 +7,7 @@ import { cache } from "react";
 import { EmptyState, ErrorState } from "@/components/data-state";
 import { PrintButton } from "@/components/genus-proposal/print-button";
 import { PurchaseOrderDocument } from "@/components/purchase-order/document";
+import { FitWidth } from "@/components/purchase-order/fit-width";
 import { getPurchaseOrder } from "@/lib/airtable/purchase-orders";
 
 const RECORD_ID = /^rec[A-Za-z0-9]{14}$/;
@@ -46,7 +47,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       ) : !po.doc ? (
         <div className="p-6"><ErrorState message="발주내용JSON을 읽지 못했다." /></div>
       ) : (
-        <div className="po-holder"><PurchaseOrderDocument number={po.number} date={po.date} doc={po.doc} /></div>
+        <FitWidth><PurchaseOrderDocument number={po.number} date={po.date} doc={po.doc} /></FitWidth>
       )}
     </div>
   );

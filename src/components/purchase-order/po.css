@@ -4,6 +4,9 @@
 .po-toolbar a { color: #b9c4b3; }
 .po-toolbar button { background: #fff; color: #1f2b1b; border: 0; border-radius: 3px; padding: 7px 14px; font: inherit; font-weight: 700; cursor: pointer; }
 .po-holder { overflow-x: auto; padding: 16px 8px; }
+/* 폰: 쪽을 화면 너비에 맞춰 줄인다(--po-zoom은 fit-width.tsx가 정한다). 인쇄에는 걸지 않는다. */
+@media screen { .po-holder .po-page { zoom: var(--po-zoom, 1); } }
+@media screen and (max-width: 820px) { .po-holder { padding: 8px 6px; } .po-toolbar { position: static; } }
 
 .po-page {
   width: 198mm; min-height: 285mm; box-sizing: border-box; margin: 0 auto 16px; display: flex; flex-direction: column;
